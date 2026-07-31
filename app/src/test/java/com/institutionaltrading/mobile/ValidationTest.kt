@@ -2,6 +2,7 @@ package com.institutionaltrading.mobile
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ValidationTest {
@@ -22,7 +23,10 @@ class ValidationTest {
     @Test fun rejectsMalformedNseSymbolsAndUrls() {
         assertFalse(OfficialNseUrl.isWhitelistedQuoteUrl("http://nseindia.com/get-quotes/equity?symbol=INFY"))
         assertFalse(OfficialNseUrl.isWhitelistedQuoteUrl("https://evil.example/get-quotes/equity?symbol=INFY"))
-        runCatching { Validation.profile(OperatorProfile("123456789",100000.0,1.0,setOf("NSE_EQUITY"),setOf("D"),setOf("INFY/../../"),5)) }.getOrThrow()
+        val rejected = runCatching {
+            Validation.profile(OperatorProfile("123456789",100000.0,1.0,setOf("NSE_EQUITY"),setOf("D"),setOf("INFY/../../"),5))
+        }.isFailure
+        assertTrue(rejected)
     }
 
     @Test fun failClosedProducesNoTrade() {
