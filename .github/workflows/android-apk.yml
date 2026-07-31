@@ -1,0 +1,86 @@
+name: Build verified Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate Gradle wrapper when missing
+        run: |
+          if [ ! -f gradlew ]; then gradle wrapper --gradle-version 8.9; fi
+          chmod +x gradlew
+          grep -q 'gradle-8.9-' gradle/wrapper/gradle-wrapper.properties
+
+      - name: Verify source contains no configured secrets
+        run: |
+          set -euo pipefail
+          ! find . -type f \( -name '.env' -o -name 'profile.json' -o -name 'resources.json' -o -name 'alert-state.json' -o -name '*.jks' -o -name '*.keystore' \) -print -quit | grep -q .
+          ! grep -RIE --exclude-dir=.git --exclude='*.md' --exclude='*.txt' '[0-9]{6,12}:[A-Za-z0-9_-]{20,}' .
+          ! grep -RIE --exclude-dir=.git 'placeOrder|executeOrder|brokerLogin|growwPassword' app/src
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Verify and package APK
+        run: |
+          set -euo pipefail
+          src=$(find app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)
+          test -n "$src"
+          test -s "$src"
+          mkdir -p dist
+          cp "$src" dist/Institutional-Trading-System-Android.apk
+          cp INSTALL_ANDROID.txt dist/INSTALL_ANDROID.txt
+          unzip -l dist/Institutional-Trading-System-Android.apk > /tmp/apk-list.txt
+          grep -q 'classes.dex' /tmp/apk-list.txt
+          ! grep -Ei '(^|/)(profile\.json|resources\.json|alert-state\.json|\.env)$' /tmp/apk-list.txt
+          unzip -p dist/Institutional-Trading-System-Android.apk classes.dex > /tmp/classes.dex
+          ! strings /tmp/classes.dex | grep -Eq '[0-9]{6,12}:[A-Za-z0-9_-]{20,}'
+          sha256sum dist/Institutional-Trading-System-Android.apk > dist/Institutional-Trading-System-Android.apk.sha256
+          expected=$(cut -d ' ' -f1 dist/Institutional-Trading-System-Android.apk.sha256)
+          actual=$(sha256sum dist/Institutional-Trading-System-Android.apk | cut -d ' ' -f1)
+          test "$expected" = "$actual"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Institutional-Trading-System-Android-${{ github.sha }}
+          path: |
+            dist/Institutional-Trading-System-Android.apk
+            dist/Institutional-Trading-System-Android.apk.sha256
+            dist/INSTALL_ANDROID.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

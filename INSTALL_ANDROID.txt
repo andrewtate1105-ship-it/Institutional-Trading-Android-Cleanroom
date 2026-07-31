@@ -1,0 +1,13 @@
+ANDROID INSTALLATION
+
+1. Download Institutional-Trading-System-Android.apk to your Android phone.
+2. Open the Files app or your Downloads folder.
+3. Tap the APK file.
+4. Allow installation from unknown apps for the browser or file manager when Android asks.
+5. Tap Install, then open Institutional Trading System.
+6. Enter the Telegram bot token only inside the app.
+7. Enter the private Telegram chat ID, account equity, risk percentage, watchlist, and timeframes.
+8. Tap Send Telegram test.
+9. Never enter a Groww password or any broker credentials.
+
+The app is signal-only and does not place orders. Software completion does not establish profitability or statistical validity.

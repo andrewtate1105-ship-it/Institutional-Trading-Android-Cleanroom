@@ -1,0 +1,9 @@
+.gradle/
+local.properties
+**/build/
+*.jks
+*.keystore
+.env
+profile.json
+resources.json
+alert-state.json
