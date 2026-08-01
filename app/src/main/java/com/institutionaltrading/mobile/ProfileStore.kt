@@ -1,8 +1,6 @@
 package com.institutionaltrading.mobile
 
 import android.content.Context
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 
 class ProfileStore(context: Context) {
@@ -11,18 +9,13 @@ class ProfileStore(context: Context) {
     fun save(profile: OperatorProfile) {
         val validated = Validation.profile(profile)
         file.parentFile?.mkdirs()
-        val json = JSONObject()
-            .put("schema", 1)
-            .put("private_chat_id", validated.privateChatId)
-            .put("account_equity", validated.accountEquity)
-            .put("risk_percent", validated.riskPercent)
-            .put("markets", JSONArray(validated.markets.toList()))
-            .put("timeframes", JSONArray(validated.timeframes.toList()))
-            .put("watchlist", JSONArray(validated.watchlist.toList()))
-            .put("swing_holding_days", validated.swingHoldingDays)
-            .put("broker_execution_enabled", false)
         val temp = File(file.parentFile, "profile.json.tmp")
-        temp.writeText(json.toString())
+        temp.writeText(ProfileCodec.encode(validated))
         require(temp.renameTo(file)) { "Could not atomically save profile" }
+    }
+
+    fun load(): OperatorProfile? {
+        if (!file.exists()) return null
+        return runCatching { ProfileCodec.decode(file.readText()) }.getOrNull()
     }
 }
