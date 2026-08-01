@@ -28,12 +28,11 @@ object AlertStateCodec {
         for (index in 0 until rows.length()) {
             val row = rows.getJSONObject(index)
             val key = ClosedBarKey(
-                Validation.normalizeCanonicalSymbol(row.getString("symbol"))
-                    ?: throw IllegalArgumentException("Stored alert symbol is invalid"),
+                runCatching { Validation.normalizeWatchlistItem(row.getString("symbol")) }
+                    .getOrElse { throw IllegalArgumentException("Stored alert symbol is invalid") },
                 row.getString("timeframe"),
                 row.getString("source_timestamp"),
             )
-            // Reuse the same validation path used before delivery.
             ClosedBarAlerts.key(SignalAlert(
                 direction = SignalDirection.NO_TRADE,
                 symbol = key.symbol,
