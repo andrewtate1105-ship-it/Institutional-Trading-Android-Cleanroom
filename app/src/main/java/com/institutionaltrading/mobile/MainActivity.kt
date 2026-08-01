@@ -11,9 +11,12 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var profileStore: ProfileStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        profileStore = ProfileStore(this)
+
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32,32,32,32) }
         val scroll = ScrollView(this).apply { addView(root) }
         root.addView(TextView(this).apply { text = "Institutional Trading System"; textSize = 22f })
@@ -27,6 +30,18 @@ class MainActivity : Activity() {
         val watchlist = field(root, "Watchlist: comma-separated or one item per line")
         val swingDays = field(root, "Swing holding guidance (trading days)").apply { setText("5") }
         status = TextView(this)
+
+        profileStore.load()?.let { saved ->
+            chatId.setText(saved.privateChatId)
+            equity.setText(saved.accountEquity.toString())
+            risk.setText(saved.riskPercent.toString())
+            markets.setText(saved.markets.joinToString(","))
+            timeframes.setText(saved.timeframes.joinToString(","))
+            watchlist.setText(saved.watchlist.joinToString("\n"))
+            swingDays.setText(saved.swingHoldingDays.toString())
+            status.text = "Secure setup restored"
+        }
+
         root.addView(Button(this).apply {
             text = "Save secure setup"
             setOnClickListener {
@@ -40,7 +55,7 @@ class MainActivity : Activity() {
                         InputNormalizer.parseList(watchlist.text.toString()),
                         swingDays.text.toString().toInt()
                     )
-                    ProfileStore(this@MainActivity).save(profile)
+                    profileStore.save(profile)
                     SecureTokenStore(this@MainActivity).save(token.text.toString().trim())
                     token.text.clear()
                     "Setup saved securely"
@@ -51,9 +66,13 @@ class MainActivity : Activity() {
             text = "Send Telegram test"
             setOnClickListener {
                 val savedToken = runCatching { SecureTokenStore(this@MainActivity).load() }.getOrNull()
-                if (savedToken == null) { status.text = "Complete setup first"; return@setOnClickListener }
+                val savedProfile = profileStore.load()
+                if (savedToken == null || savedProfile == null) {
+                    status.text = "Complete setup first"
+                    return@setOnClickListener
+                }
                 thread {
-                    val result = TelegramClient.send(savedToken, chatId.text.toString().trim(), "Institutional Trading System test: signal-only Android connection verified.")
+                    val result = TelegramClient.send(savedToken, savedProfile.privateChatId, "Institutional Trading System test: signal-only Android connection verified.")
                     runOnUiThread { status.text = result.fold({ "Telegram test delivered" }, { "Telegram test failed: ${it.message}" }) }
                 }
             }
