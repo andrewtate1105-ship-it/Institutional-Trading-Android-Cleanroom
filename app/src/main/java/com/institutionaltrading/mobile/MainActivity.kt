@@ -3,6 +3,7 @@ package com.institutionaltrading.mobile
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.ViewGroup
@@ -73,9 +74,18 @@ class MainActivity : Activity() {
 
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("image/") != true) return
-        val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        val uri = sharedImageUri(intent)
         status.text = if (uri == null) "Screenshot rejected: missing image" else "Screenshot received. Add symbol, timeframe and capture time before analysis. Hidden prices or indicators will not be inferred."
     }
+
+    private fun sharedImageUri(intent: Intent): Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    } else {
+        legacySharedImageUri(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun legacySharedImageUri(intent: Intent): Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
 
     private fun field(parent: LinearLayout, hint: String, password: Boolean = false, multiline: Boolean = false) = EditText(this).apply {
         this.hint = hint
