@@ -44,13 +44,15 @@ jobs:
           chmod +x gradlew
           grep -q 'gradle-8.9-' gradle/wrapper/gradle-wrapper.properties
 
-      - name: Verify source contains no configured secrets
+      - name: Verify source contains no configured secrets or deprecated screenshot API
         run: |
           set -euo pipefail
           ! find . -type f \( -name '.env' -o -name 'profile.json' -o -name 'resources.json' -o -name 'alert-state.json' -o -name '*.jks' -o -name '*.keystore' \) -print -quit | grep -q .
           ! grep -RIE --exclude-dir=.git --exclude='*.md' --exclude='*.txt' '[0-9]{6,12}:[A-Za-z0-9_-]{20,}' .
           ! grep -RIE --include='*.kt' --include='*.xml' '"-?[0-9]{5,20}"' app/src/main
           ! grep -RIE --exclude-dir=.git 'placeOrder|executeOrder|brokerLogin|growwPassword' app/src
+          ! grep -RIE --include='*.kt' 'getParcelableExtra<Uri>' app/src/main
+          grep -q 'getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)' app/src/main/java/com/institutionaltrading/mobile/MainActivity.kt
 
       - name: Test and build debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
