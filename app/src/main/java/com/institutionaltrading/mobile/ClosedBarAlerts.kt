@@ -15,8 +15,9 @@ object ClosedBarAlerts {
     const val maxRememberedKeys = 2_000
 
     fun key(alert: SignalAlert): ClosedBarKey {
-        val symbol = Validation.normalizeCanonicalSymbol(alert.symbol)
-            ?: throw IllegalArgumentException("Alert symbol is invalid")
+        val symbol = runCatching { Validation.normalizeWatchlistItem(alert.symbol) }
+            .getOrElse { throw IllegalArgumentException("Alert symbol is invalid") }
+        require(!symbol.startsWith("HTTP", ignoreCase = true)) { "Alert symbol is invalid" }
         require(alert.timeframe in Validation.defaultTimeframes) { "Alert timeframe is unsupported" }
         require(alert.sourceTimestamp != "UNAVAILABLE") { "Closed-bar timestamp is required" }
         val timestamp = runCatching { Instant.parse(alert.sourceTimestamp) }
