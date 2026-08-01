@@ -18,20 +18,28 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply { addView(root) }
         root.addView(TextView(this).apply { text = "Institutional Trading System"; textSize = 22f })
         root.addView(TextView(this).apply { text = "Signal-only Android build. No Groww login and no automated orders." })
-        val chatId = field(root, "Private Telegram chat ID")
+        val chatId = field(root, "Numeric Telegram chat ID from Telegram")
         val token = field(root, "Telegram bot token", true)
         val equity = field(root, "Account equity (INR)")
         val risk = field(root, "Risk percent (max 2)").apply { setText("1") }
-        val markets = field(root, "Markets").apply { setText("NSE_EQUITY") }
+        val markets = field(root, "Markets").apply { setText("NSE_EQUITY,NSE_INDEX,MCX_COMMODITY") }
         val timeframes = field(root, "Timeframes").apply { setText("5M,15M,1H,D,W") }
-        val watchlist = field(root, "Watchlist symbols or official NSE quote URLs")
+        val watchlist = field(root, "Watchlist: comma-separated or one item per line")
         val swingDays = field(root, "Swing holding guidance (trading days)").apply { setText("5") }
         status = TextView(this)
         root.addView(Button(this).apply {
             text = "Save secure setup"
             setOnClickListener {
                 runCatching {
-                    val profile = OperatorProfile(chatId.text.toString().trim(), equity.text.toString().toDouble(), risk.text.toString().toDouble(), csv(markets.text.toString()), csv(timeframes.text.toString()), csv(watchlist.text.toString()), swingDays.text.toString().toInt())
+                    val profile = OperatorProfile(
+                        chatId.text.toString().trim(),
+                        equity.text.toString().toDouble(),
+                        risk.text.toString().toDouble(),
+                        InputNormalizer.parseList(markets.text.toString()),
+                        InputNormalizer.parseList(timeframes.text.toString()),
+                        InputNormalizer.parseList(watchlist.text.toString()),
+                        swingDays.text.toString().toInt()
+                    )
                     ProfileStore(this@MainActivity).save(profile)
                     SecureTokenStore(this@MainActivity).save(token.text.toString().trim())
                     token.text.clear()
@@ -69,6 +77,4 @@ class MainActivity : Activity() {
         if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         parent.addView(this)
     }
-
-    private fun csv(value: String) = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 }
