@@ -33,6 +33,8 @@ _Last updated: 2026-08-01_
   - `SENSEX` — index
   - `CRUDEOILM` — commodity
 - Regression tests for watchlist parsing, URL handling, instrument classification, Telegram Chat ID validation, and secret hygiene.
+- Android 13+ typed screenshot-share URI extraction with an isolated backward-compatible path for Android 7–12.
+- CI regression guard preventing reintroduction of the deprecated generic screenshot-share API call.
 - GitHub Actions verification for source secrets, APK existence, `classes.dex`, prohibited packaged profile files, hardcoded Telegram credentials, and broker-execution surfaces.
 - Preserved operating constraints:
   - Android Keystore encryption
@@ -46,19 +48,17 @@ _Last updated: 2026-08-01_
 
 ## Pending work
 
-- Review and merge pull request #2 into `main` after approval.
+- Review and merge pull request #2 into `main` only after approval and complete CI evidence.
 - Produce a signed release APK or Android App Bundle for production distribution; the current verified artifact is a debug APK.
 - Add device or emulator UI tests for the complete onboarding interaction. Current regression coverage is unit-test focused.
 - Add live exchange-instrument verification only if a trusted, authenticated data source is selected; local parsing currently validates syntax and explicit classifications, not live listing status.
 - Decide whether BSE and commodity quote URL formats should receive separate, explicitly allowlisted parsers.
-- Replace deprecated Android `getParcelableExtra` usage reported by the compiler when broader maintenance work is authorized.
 
 ## Known bugs and limitations
 
 - Instrument classification is local metadata and does not confirm that a symbol is currently listed or tradable on a live exchange.
 - URL support is intentionally restricted to approved NSE HTTPS quote hosts and paths; other finance URLs are rejected.
 - The generated APK is a debug build and is not suitable as a production-signed release.
-- The compiler reports a deprecation warning for `getParcelableExtra` in `MainActivity.kt`; it does not fail the build.
 - The GitHub Actions artifact is retained for 30 days unless downloaded or rebuilt.
 - Software validation and successful builds do not establish trading profitability or strategy validity.
 
@@ -90,13 +90,13 @@ Verification requirements:
 2. Confirm `classes.dex` exists in the APK.
 3. Confirm `.env`, `profile.json`, `resources.json`, and `alert-state.json` are not packaged.
 4. Confirm no Telegram bot token or numeric Chat ID constant is embedded in source or `classes.dex`.
-5. Rename the APK to `Institutional-Trading-System-Android.apk`.
-6. Generate `Institutional-Trading-System-Android.apk.sha256` using SHA-256.
+5. Confirm the typed Android 13+ screenshot-share API remains present and the deprecated generic call is absent.
+6. Rename the APK to `Institutional-Trading-System-Android.apk`.
+7. Generate `Institutional-Trading-System-Android.apk.sha256` using SHA-256.
 
 ## Latest APK details
 
-- Verified application commit: `7c3aa777dafb0d1428d8fae1d4dbc8f09f938e4b`
-- Pull-request merge test SHA: `7170721ff101ca3c26585ca2cb5dc83fac4068e8`
+- Last fully verified application commit: `7c3aa777dafb0d1428d8fae1d4dbc8f09f938e4b`
 - Workflow run: `30682804025`
 - Artifact ID: `8812873652`
 - GitHub Actions artifact name: `Institutional-Trading-System-Android-7170721ff101ca3c26585ca2cb5dc83fac4068e8`
@@ -108,21 +108,21 @@ Verification requirements:
 
 ## Latest commit SHA
 
-- Latest verified application-code commit: `7c3aa777dafb0d1428d8fae1d4dbc8f09f938e4b`
-- Base `main` SHA used for the fix: `1b4837b13f60d256658ec8a2f31deaf243e3fd78`
-- This state document is committed afterward on branch `fix/onboarding-watchlist-validation`; use the branch head for the newest documentation commit.
+- Screenshot compatibility implementation commit: `67bd2cedf2f50f5551f22370d58bc487ec6a4325`
+- CI guard commit: `c9b5326d811a2cfa3b06eb3424deb5f434e1b127`
+- Branch: `fix/onboarding-watchlist-validation`
 
 ## Test status
 
-**Status: passing.**
+**Status: CI pending for the screenshot compatibility maintenance change.**
 
-Command executed in GitHub Actions:
+Last fully verified command:
 
 ```bash
 ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Results:
+Previously verified results:
 
 - `:app:testDebugUnitTest` — passed
 - `:app:assembleDebug` — passed
