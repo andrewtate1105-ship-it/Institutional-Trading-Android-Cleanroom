@@ -9,7 +9,10 @@ data class ClosedBarKey(
     val sourceTimestamp: String,
 )
 
-data class AlertDeliveryState(val deliveredKeys: Set<ClosedBarKey> = emptySet())
+data class AlertDeliveryState(
+    val deliveredKeys: Set<ClosedBarKey> = emptySet(),
+    val pendingKeys: Set<ClosedBarKey> = emptySet(),
+)
 
 object ClosedBarAlerts {
     const val maxRememberedKeys = 2_000
@@ -26,14 +29,31 @@ object ClosedBarAlerts {
         return ClosedBarKey(symbol, alert.timeframe, alert.sourceTimestamp)
     }
 
-    fun shouldDeliver(alert: SignalAlert, state: AlertDeliveryState): Boolean = key(alert) !in state.deliveredKeys
+    fun shouldDeliver(alert: SignalAlert, state: AlertDeliveryState): Boolean {
+        val key = key(alert)
+        return key !in state.deliveredKeys && key !in state.pendingKeys
+    }
+
+    fun reserve(alert: SignalAlert, state: AlertDeliveryState): AlertDeliveryState {
+        val key = key(alert)
+        require(key !in state.deliveredKeys && key !in state.pendingKeys) { "Alert is already delivered or pending" }
+        return state.copy(pendingKeys = bounded(state.pendingKeys + key))
+    }
 
     fun markDelivered(alert: SignalAlert, state: AlertDeliveryState): AlertDeliveryState {
         val key = key(alert)
-        val retained = (state.deliveredKeys + key)
-            .sortedByDescending { it.sourceTimestamp }
-            .take(maxRememberedKeys)
-            .toSet()
-        return AlertDeliveryState(retained)
+        require(key in state.pendingKeys) { "Alert must be reserved before delivery completion" }
+        return AlertDeliveryState(
+            deliveredKeys = bounded(state.deliveredKeys + key),
+            pendingKeys = state.pendingKeys - key,
+        )
     }
+
+    fun release(alert: SignalAlert, state: AlertDeliveryState): AlertDeliveryState =
+        state.copy(pendingKeys = state.pendingKeys - key(alert))
+
+    private fun bounded(keys: Set<ClosedBarKey>): Set<ClosedBarKey> = keys
+        .sortedByDescending { it.sourceTimestamp }
+        .take(maxRememberedKeys)
+        .toSet()
 }
