@@ -26,8 +26,16 @@ class ClosedBarAlertsTest {
         val signal = alert()
         val empty = AlertDeliveryState()
         assertTrue(ClosedBarAlerts.shouldDeliver(signal, empty))
-        val delivered = ClosedBarAlerts.markDelivered(signal, empty)
+        val reserved = ClosedBarAlerts.reserve(signal, empty)
+        assertFalse(ClosedBarAlerts.shouldDeliver(signal, reserved))
+        val delivered = ClosedBarAlerts.markDelivered(signal, reserved)
         assertFalse(ClosedBarAlerts.shouldDeliver(signal, delivered))
+    }
+
+    @Test fun failedReservationCanBeReleasedForRetry() {
+        val signal = alert()
+        val reserved = ClosedBarAlerts.reserve(signal, AlertDeliveryState())
+        assertTrue(ClosedBarAlerts.shouldDeliver(signal, ClosedBarAlerts.release(signal, reserved)))
     }
 
     @Test fun rejectsUnavailableAndNonCanonicalTimestamps() {
@@ -46,18 +54,26 @@ class ClosedBarAlertsTest {
         assertTrue(text.length <= 4096)
     }
 
-    @Test fun alertStateRoundTripsAndRejectsDuplicates() {
-        val state = ClosedBarAlerts.markDelivered(alert(), AlertDeliveryState())
+    @Test fun alertStateRoundTripsAndMigratesSchemaOne() {
+        val reserved = ClosedBarAlerts.reserve(alert(), AlertDeliveryState())
+        val state = ClosedBarAlerts.markDelivered(alert(), reserved)
         assertEquals(state, AlertStateCodec.decode(AlertStateCodec.encode(state)))
+        val legacy = """{"schema":1,"delivered":[{"symbol":"RELIANCE","timeframe":"15M","source_timestamp":"2026-08-01T09:45:00Z"}]}"""
+        assertEquals(1, AlertStateCodec.decode(legacy).deliveredKeys.size)
+    }
+
+    @Test fun rejectsDuplicateAndOverlappingState() {
         val duplicateJson = """{"schema":1,"delivered":[{"symbol":"RELIANCE","timeframe":"15M","source_timestamp":"2026-08-01T09:45:00Z"},{"symbol":"RELIANCE","timeframe":"15M","source_timestamp":"2026-08-01T09:45:00Z"}]}"""
         assertTrue(runCatching { AlertStateCodec.decode(duplicateJson) }.isFailure)
+        val overlap = """{"schema":2,"delivered":[{"symbol":"RELIANCE","timeframe":"15M","source_timestamp":"2026-08-01T09:45:00Z"}],"pending":[{"symbol":"RELIANCE","timeframe":"15M","source_timestamp":"2026-08-01T09:45:00Z"}]}"""
+        assertTrue(runCatching { AlertStateCodec.decode(overlap) }.isFailure)
     }
 
     @Test fun deliveryStateIsBounded() {
         var state = AlertDeliveryState()
         repeat(ClosedBarAlerts.maxRememberedKeys + 5) { index ->
-            val timestamp = java.time.Instant.parse("2026-01-01T00:00:00Z").plusSeconds(index.toLong()).toString()
-            state = ClosedBarAlerts.markDelivered(alert(timestamp), state)
+            val signal = alert(java.time.Instant.parse("2026-01-01T00:00:00Z").plusSeconds(index.toLong()).toString())
+            state = ClosedBarAlerts.markDelivered(signal, ClosedBarAlerts.reserve(signal, state))
         }
         assertEquals(ClosedBarAlerts.maxRememberedKeys, state.deliveredKeys.size)
     }
