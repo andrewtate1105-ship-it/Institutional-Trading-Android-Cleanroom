@@ -54,20 +54,21 @@ object NseClosedBarSchedule {
         val close = date.atTime(sessionClose).atZone(zone)
         if (now.isBefore(open.plus(interval))) return null
         val capped = if (now.isAfter(close)) close else now
-        val elapsedSeconds = Duration.between(open, capped).seconds
-        val intervalSeconds = interval.seconds
-        val completed = elapsedSeconds / intervalSeconds
+        val completed = Duration.between(open, capped).seconds / interval.seconds
         if (completed <= 0L) return null
-        val candidate = open.plusSeconds(completed * intervalSeconds)
-        return if (candidate.isAfter(close)) close else candidate
+        val candidate = open.plusSeconds(completed * interval.seconds)
+        return candidate.takeUnless { it.isAfter(close) }
     }
 
     private fun latestDaily(now: ZonedDateTime, calendar: TradingSessionCalendar): ZonedDateTime? {
         var date = now.toLocalDate()
-        if (calendar.isTradingSession(date) == null) return null
-        if (calendar.isTradingSession(date) == true) {
-            val close = date.atTime(sessionClose).atZone(zone)
-            if (!now.isBefore(close)) return close
+        when (calendar.isTradingSession(date)) {
+            null -> return null
+            true -> {
+                val close = date.atTime(sessionClose).atZone(zone)
+                if (!now.isBefore(close)) return close
+            }
+            false -> Unit
         }
         date = date.minusDays(1)
         repeat(10) {
@@ -81,17 +82,24 @@ object NseClosedBarSchedule {
     }
 
     private fun latestWeekly(now: ZonedDateTime, calendar: TradingSessionCalendar): ZonedDateTime? {
-        val latestDaily = latestDaily(now, calendar) ?: return null
-        var date = latestDaily.toLocalDate()
-        val weekEnd = date.with(DayOfWeek.FRIDAY)
-        if (date.isBefore(weekEnd)) {
-            date = date.minusWeeks(1).with(DayOfWeek.FRIDAY)
-        } else {
-            date = weekEnd
+        var friday = now.toLocalDate().with(DayOfWeek.FRIDAY)
+        repeat(3) {
+            val finalSession = finalConfirmedSessionOnOrBefore(friday, calendar) ?: return null
+            val close = finalSession.atTime(sessionClose).atZone(zone)
+            if (!now.isBefore(close)) return close
+            friday = friday.minusWeeks(1)
         }
-        repeat(7) {
+        return null
+    }
+
+    private fun finalConfirmedSessionOnOrBefore(
+        friday: LocalDate,
+        calendar: TradingSessionCalendar,
+    ): LocalDate? {
+        var date = friday
+        repeat(5) {
             when (calendar.isTradingSession(date)) {
-                true -> return date.atTime(sessionClose).atZone(zone)
+                true -> return date
                 null -> return null
                 false -> date = date.minusDays(1)
             }
