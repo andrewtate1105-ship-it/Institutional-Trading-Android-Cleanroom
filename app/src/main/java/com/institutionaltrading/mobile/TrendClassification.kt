@@ -28,19 +28,21 @@ object TrendClassifier {
             )
         }
 
+        val currentHigh = highs.last()
+        val currentLow = lows.last()
         val previousHigh = highs[highs.lastIndex - 1]
         val previousLow = lows[lows.lastIndex - 1]
 
         val state = when {
-            latestHigh!!.price > previousHigh.price && latestLow!!.price > previousLow.price -> TrendState.UPTREND
-            latestHigh.price < previousHigh.price && latestLow.price < previousLow.price -> TrendState.DOWNTREND
+            currentHigh.price > previousHigh.price && currentLow.price > previousLow.price -> TrendState.UPTREND
+            currentHigh.price < previousHigh.price && currentLow.price < previousLow.price -> TrendState.DOWNTREND
             else -> TrendState.RANGE
         }
 
         return TrendClassification(
             state = state,
-            latestExternalHigh = latestHigh,
-            latestExternalLow = latestLow,
+            latestExternalHigh = currentHigh,
+            latestExternalLow = currentLow,
             warning = null,
         )
     }
