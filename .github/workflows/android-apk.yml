@@ -2,10 +2,14 @@ name: Build verified Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, agent/once-only-onboarding]
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -75,6 +79,15 @@ jobs:
           expected=$(cut -d ' ' -f1 dist/Institutional-Trading-System-Android.apk.sha256)
           actual=$(sha256sum dist/Institutional-Trading-System-Android.apk | cut -d ' ' -f1)
           test "$expected" = "$actual"
+
+      - name: Upload unit-test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports-${{ github.sha }}
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         with:
