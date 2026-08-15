@@ -13,10 +13,12 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var readiness: TextView
     private lateinit var profileStore: ProfileStore
+    private lateinit var nseLinkStore: NseLinkRegistryStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         profileStore = ProfileStore(this)
+        nseLinkStore = NseLinkRegistryStore(this)
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
         val scroll = ScrollView(this).apply { addView(root) }
@@ -32,6 +34,7 @@ class MainActivity : Activity() {
         val markets = field(root, "Markets").apply { setText("NSE_EQUITY,NSE_INDEX,MCX_COMMODITY") }
         val timeframes = field(root, "Timeframes").apply { setText("5M,15M,1H,D,W") }
         val watchlist = field(root, "Watchlist: comma-separated or one item per line")
+        val nseLinks = field(root, "Official NSE quote URLs: one per line")
         val swingDays = field(root, "Swing holding guidance (trading days)").apply { setText("5") }
         status = TextView(this)
 
@@ -43,6 +46,8 @@ class MainActivity : Activity() {
             timeframes.setText(saved.timeframes.joinToString(","))
             watchlist.setText(saved.watchlist.joinToString("\n"))
             swingDays.setText(saved.swingHoldingDays.toString())
+            runCatching { nseLinkStore.load(saved.watchlist.toSet()) }
+                .onSuccess { links -> nseLinks.setText(links.joinToString("\n") { it.url }) }
             status.text = "Secure setup restored"
         }
 
@@ -59,10 +64,13 @@ class MainActivity : Activity() {
                         InputNormalizer.parseList(watchlist.text.toString()),
                         swingDays.text.toString().toInt()
                     )
+                    val urls = nseLinks.text.toString().lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
+                    NseLinkRegistryCodec.normalize(urls, profile.watchlist.toSet())
                     profileStore.save(profile)
+                    nseLinkStore.save(urls, profile.watchlist.toSet())
                     SecureTokenStore(this@MainActivity).save(token.text.toString().trim())
                     token.text.clear()
-                    "Setup saved securely"
+                    "Setup and official NSE links saved securely"
                 }.onSuccess {
                     status.text = it
                     refreshReadiness()
@@ -113,6 +121,9 @@ class MainActivity : Activity() {
     private fun refreshReadiness() {
         val savedProfile = runCatching { profileStore.load() }.getOrNull()
         val savedToken = runCatching { SecureTokenStore(this).load() }.getOrNull()
+        val savedLinks = savedProfile?.let { profile ->
+            runCatching { nseLinkStore.load(profile.watchlist.toSet()) }.getOrDefault(emptyList())
+        } ?: emptyList()
         val gate = RuntimeReadinessChecker.evaluate(
             profile = savedProfile,
             telegramToken = savedToken,
@@ -121,7 +132,9 @@ class MainActivity : Activity() {
         readiness.text = buildString {
             append("Profile: ").append(if (gate.profileReady) "READY" else "NOT READY")
             append(" | Telegram: ").append(if (gate.telegramReady) "READY" else "NOT READY")
+            append(" | NSE links: ").append(savedLinks.size)
             append(" | Automatic analysis: ").append(if (gate.automaticAnalysisReady) "READY" else "LOCKED")
+            if (savedLinks.isNotEmpty()) append("\nNSE links identify instruments only until lawful machine-readable price data is verified.")
             if (gate.reasons.isNotEmpty()) append("\n").append(gate.reasons.joinToString(" "))
         }
     }
