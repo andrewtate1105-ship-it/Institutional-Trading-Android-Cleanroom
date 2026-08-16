@@ -81,20 +81,18 @@ jobs:
       - name: Run unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
-      - name: Build APK
-        run: |
-          set -euo pipefail
-          if [ "$RELEASE_SIGNING_READY" = "true" ]; then
-            ./gradlew --no-daemon :app:assembleRelease
-          else
-            ./gradlew --no-daemon :app:assembleDebug
-          fi
+      - name: Verify release build path
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Build fallback debug APK when release signing is unavailable
+        if: env.RELEASE_SIGNING_READY != 'true'
+        run: ./gradlew --no-daemon :app:assembleDebug
 
       - name: Verify and package APK
         run: |
           set -euo pipefail
           if [ "$APK_BUILD_TYPE" = "release" ]; then
-            src=$(find app/build/outputs/apk/release -name '*.apk' -type f -print -quit)
+            src=$(find app/build/outputs/apk/release -name '*.apk' -type f ! -name '*unsigned*' -print -quit)
           else
             src=$(find app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)
           fi
@@ -103,7 +101,7 @@ jobs:
           mkdir -p dist
           cp "$src" dist/Institutional-Trading-System-Android.apk
           cp INSTALL_ANDROID.txt dist/INSTALL_ANDROID.txt
-          printf 'build_type=%s\nrelease_signing=%s\n' "$APK_BUILD_TYPE" "$RELEASE_SIGNING_READY" > dist/BUILD_INFO.txt
+          printf 'build_type=%s\nrelease_signing=%s\nrelease_path_verified=true\n' "$APK_BUILD_TYPE" "$RELEASE_SIGNING_READY" > dist/BUILD_INFO.txt
 
           unzip -l dist/Institutional-Trading-System-Android.apk > /tmp/apk-list.txt
           grep -q 'classes.dex' /tmp/apk-list.txt
