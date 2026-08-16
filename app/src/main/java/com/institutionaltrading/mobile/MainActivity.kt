@@ -82,6 +82,17 @@ class MainActivity : Activity() {
         })
 
         root.addView(Button(this).apply {
+            text = "Import historical OHLC CSV"
+            setOnClickListener {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "text/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/csv", "text/comma-separated-values", "text/plain"))
+                }, REQUEST_HISTORICAL_CSV)
+            }
+        })
+
+        root.addView(Button(this).apply {
             text = "Send Telegram test"
             setOnClickListener {
                 val savedToken = runCatching { SecureTokenStore(this@MainActivity).load() }.getOrNull()
@@ -116,6 +127,36 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShare(intent)
+    }
+
+    @Deprecated("Deprecated in Android API; retained for minimum-SDK compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_HISTORICAL_CSV || resultCode != RESULT_OK) return
+        val uri = data?.data
+        if (uri == null) {
+            status.text = "Historical CSV rejected: missing document"
+            return
+        }
+        val result = runCatching {
+            val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(HistoricalDataIntake.maxBytes + 1)
+                var total = 0
+                while (total < buffer.size) {
+                    val read = input.read(buffer, total, buffer.size - total)
+                    if (read < 0) break
+                    total += read
+                }
+                buffer.copyOf(total)
+            } ?: throw IllegalArgumentException("Could not read selected CSV")
+            HistoricalDataIntake.validateCsv(bytes)
+        }
+        status.text = result.fold(
+            onSuccess = { summary ->
+                "Historical CSV validated: ${summary.rowCount} rows, ${summary.firstTimestamp} to ${summary.lastTimestamp}. Stored only for user-driven validation; automatic live analysis remains locked."
+            },
+            onFailure = { error -> "Historical CSV rejected: ${error.message}" },
+        )
     }
 
     private fun refreshReadiness() {
@@ -154,5 +195,9 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         parent.addView(this)
+    }
+
+    companion object {
+        private const val REQUEST_HISTORICAL_CSV = 1001
     }
 }
