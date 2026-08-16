@@ -70,11 +70,24 @@ jobs:
           mkdir -p dist
           cp "$src" dist/Institutional-Trading-System-Android.apk
           cp INSTALL_ANDROID.txt dist/INSTALL_ANDROID.txt
+
           unzip -l dist/Institutional-Trading-System-Android.apk > /tmp/apk-list.txt
           grep -q 'classes.dex' /tmp/apk-list.txt
           ! grep -Ei '(^|/)(profile\.json|resources\.json|alert-state\.json|\.env)$' /tmp/apk-list.txt
+
           unzip -p dist/Institutional-Trading-System-Android.apk classes.dex > /tmp/classes.dex
           ! strings /tmp/classes.dex | grep -Eq '[0-9]{6,12}:[A-Za-z0-9_-]{20,}'
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/Institutional-Trading-System-Android.apk > /tmp/apksigner.txt
+          grep -q 'Verifies' /tmp/apksigner.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Institutional-Trading-System-Android.apk > /tmp/badging.txt
+          grep -q "package: name='com.institutionaltrading.mobile'" /tmp/badging.txt
+          grep -q "versionCode='2'" /tmp/badging.txt
+          grep -q "versionName='0.2.0-cleanroom'" /tmp/badging.txt
+          grep -q "sdkVersion:'24'" /tmp/badging.txt
+          grep -q "targetSdkVersion:'35'" /tmp/badging.txt
+
           sha256sum dist/Institutional-Trading-System-Android.apk > dist/Institutional-Trading-System-Android.apk.sha256
           expected=$(cut -d ' ' -f1 dist/Institutional-Trading-System-Android.apk.sha256)
           actual=$(sha256sum dist/Institutional-Trading-System-Android.apk | cut -d ' ' -f1)
