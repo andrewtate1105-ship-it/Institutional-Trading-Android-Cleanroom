@@ -1,8 +1,10 @@
 package com.institutionaltrading.mobile
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
 
 class HistoricalDataIntakeTest {
     private val validCsv = """
@@ -22,6 +24,21 @@ class HistoricalDataIntakeTest {
         assertTrue(runCatching { HistoricalDataIntake.validateCsv(byteArrayOf()) }.isFailure)
         val oversized = ByteArray(HistoricalDataIntake.maxBytes + 1) { '1'.code.toByte() }
         assertTrue(runCatching { HistoricalDataIntake.validateCsv(oversized) }.isFailure)
+    }
+
+    @Test fun boundedReaderReturnsExactBytes() {
+        val source = validCsv.toByteArray()
+        val actual = ByteArrayInputStream(source).use(HistoricalDataIntake::readBounded)
+        assertArrayEquals(source, actual)
+    }
+
+    @Test fun boundedReaderRejectsOversizedInput() {
+        val oversized = ByteArray(HistoricalDataIntake.maxBytes + 1) { '1'.code.toByte() }
+        val result = runCatching {
+            ByteArrayInputStream(oversized).use(HistoricalDataIntake::readBounded)
+        }
+        assertTrue(result.isFailure)
+        assertEquals("CSV file exceeds 5 MB safety limit", result.exceptionOrNull()?.message)
     }
 
     @Test fun rejectsBrokenPreviousCloseContinuity() {
