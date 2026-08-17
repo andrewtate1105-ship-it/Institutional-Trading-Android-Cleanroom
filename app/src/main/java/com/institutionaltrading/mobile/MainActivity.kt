@@ -7,13 +7,17 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.ViewGroup
 import android.widget.*
-import kotlin.concurrent.thread
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var readiness: TextView
     private lateinit var profileStore: ProfileStore
     private lateinit var nseLinkStore: NseLinkRegistryStore
+    private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "institutional-trading-io").apply { isDaemon = true }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,13 +107,17 @@ class MainActivity : Activity() {
                     refreshReadiness()
                     return@setOnClickListener
                 }
-                thread {
+                isEnabled = false
+                status.text = "Sending Telegram test…"
+                ioExecutor.execute {
                     val result = TelegramClient.send(
                         savedToken!!,
                         savedProfile!!.privateChatId,
                         "Institutional Trading System test: secure Telegram connection verified."
                     )
                     runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        isEnabled = true
                         status.text = result.fold({ "Telegram test delivered" }, { "Telegram test failed: ${it.message}" })
                         refreshReadiness()
                     }
@@ -129,6 +137,11 @@ class MainActivity : Activity() {
         handleShare(intent)
     }
 
+    override fun onDestroy() {
+        ioExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
     @Deprecated("Deprecated in Android API; retained for minimum-SDK compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -138,25 +151,24 @@ class MainActivity : Activity() {
             status.text = "Historical CSV rejected: missing document"
             return
         }
-        val result = runCatching {
-            val bytes = contentResolver.openInputStream(uri)?.use { input ->
-                val buffer = ByteArray(HistoricalDataIntake.maxBytes + 1)
-                var total = 0
-                while (total < buffer.size) {
-                    val read = input.read(buffer, total, buffer.size - total)
-                    if (read < 0) break
-                    total += read
-                }
-                buffer.copyOf(total)
-            } ?: throw IllegalArgumentException("Could not read selected CSV")
-            HistoricalDataIntake.validateCsv(bytes)
+
+        status.text = "Validating historical CSV…"
+        ioExecutor.execute {
+            val result = runCatching {
+                val bytes = contentResolver.openInputStream(uri)?.use(HistoricalDataIntake::readBounded)
+                    ?: throw IllegalArgumentException("Could not read selected CSV")
+                HistoricalDataIntake.validateCsv(bytes)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                status.text = result.fold(
+                    onSuccess = { summary ->
+                        "Historical CSV validated: ${summary.rowCount} rows, ${summary.firstTimestamp} to ${summary.lastTimestamp}. Stored only for user-driven validation; automatic live analysis remains locked."
+                    },
+                    onFailure = { error -> "Historical CSV rejected: ${error.message}" },
+                )
+            }
         }
-        status.text = result.fold(
-            onSuccess = { summary ->
-                "Historical CSV validated: ${summary.rowCount} rows, ${summary.firstTimestamp} to ${summary.lastTimestamp}. Stored only for user-driven validation; automatic live analysis remains locked."
-            },
-            onFailure = { error -> "Historical CSV rejected: ${error.message}" },
-        )
     }
 
     private fun refreshReadiness() {
