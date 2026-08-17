@@ -42,23 +42,10 @@ class MainActivity : Activity() {
         val swingDays = field(root, "Swing holding guidance (trading days)").apply { setText("5") }
         status = TextView(this)
 
-        profileStore.load()?.let { saved ->
-            chatId.setText(saved.privateChatId)
-            equity.setText(saved.accountEquity.toString())
-            risk.setText(saved.riskPercent.toString())
-            markets.setText(saved.markets.joinToString(","))
-            timeframes.setText(saved.timeframes.joinToString(","))
-            watchlist.setText(saved.watchlist.joinToString("\n"))
-            swingDays.setText(saved.swingHoldingDays.toString())
-            runCatching { nseLinkStore.load(saved.watchlist.toSet()) }
-                .onSuccess { links -> nseLinks.setText(links.joinToString("\n") { it.url }) }
-            status.text = "Secure setup restored"
-        }
-
-        root.addView(Button(this).apply {
+        val saveButton = Button(this).apply {
             text = "Save secure setup"
             setOnClickListener {
-                runCatching {
+                val input = runCatching {
                     val profile = OperatorProfile(
                         chatId.text.toString().trim(),
                         equity.text.toString().toDouble(),
@@ -70,20 +57,37 @@ class MainActivity : Activity() {
                     )
                     val urls = nseLinks.text.toString().lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
                     NseLinkRegistryCodec.normalize(urls, profile.watchlist.toSet())
-                    profileStore.save(profile)
-                    nseLinkStore.save(urls, profile.watchlist.toSet())
-                    SecureTokenStore(this@MainActivity).save(token.text.toString().trim())
-                    token.text.clear()
-                    "Setup and official NSE links saved securely"
-                }.onSuccess {
-                    status.text = it
-                    refreshReadiness()
-                }.onFailure {
-                    status.text = "Setup rejected: ${it.message}"
-                    refreshReadiness()
+                    Triple(profile, urls, token.text.toString().trim())
+                }
+                if (input.isFailure) {
+                    status.text = "Setup rejected: ${input.exceptionOrNull()?.message}"
+                    return@setOnClickListener
+                }
+
+                isEnabled = false
+                status.text = "Saving secure setup…"
+                ioExecutor.execute {
+                    val result = runCatching {
+                        val (profile, urls, rawToken) = input.getOrThrow()
+                        profileStore.save(profile)
+                        nseLinkStore.save(urls, profile.watchlist.toSet())
+                        SecureTokenStore(this@MainActivity).save(rawToken)
+                    }
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        isEnabled = true
+                        result.onSuccess {
+                            token.text.clear()
+                            status.text = "Setup and official NSE links saved securely"
+                        }.onFailure {
+                            status.text = "Setup rejected: ${it.message}"
+                        }
+                        refreshReadinessAsync()
+                    }
                 }
             }
-        })
+        }
+        root.addView(saveButton)
 
         root.addView(Button(this).apply {
             text = "Import historical OHLC CSV"
@@ -99,27 +103,26 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "Send Telegram test"
             setOnClickListener {
-                val savedToken = runCatching { SecureTokenStore(this@MainActivity).load() }.getOrNull()
-                val savedProfile = profileStore.load()
-                val gate = RuntimeReadinessChecker.evaluate(savedProfile, savedToken, automaticSourceConfigured = false)
-                if (!gate.telegramReady) {
-                    status.text = "Telegram test locked: ${gate.reasons.joinToString(" ")}"
-                    refreshReadiness()
-                    return@setOnClickListener
-                }
                 isEnabled = false
-                status.text = "Sending Telegram test…"
+                status.text = "Checking secure Telegram setup…"
                 ioExecutor.execute {
-                    val result = TelegramClient.send(
-                        savedToken!!,
-                        savedProfile!!.privateChatId,
-                        "Institutional Trading System test: secure Telegram connection verified."
-                    )
+                    val savedToken = runCatching { SecureTokenStore(this@MainActivity).load() }.getOrNull()
+                    val savedProfile = runCatching { profileStore.load() }.getOrNull()
+                    val gate = RuntimeReadinessChecker.evaluate(savedProfile, savedToken, automaticSourceConfigured = false)
+                    val result = if (!gate.telegramReady) {
+                        Result.failure(IllegalStateException(gate.reasons.joinToString(" ")))
+                    } else {
+                        TelegramClient.send(
+                            savedToken!!,
+                            savedProfile!!.privateChatId,
+                            "Institutional Trading System test: secure Telegram connection verified."
+                        )
+                    }
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
                         isEnabled = true
                         status.text = result.fold({ "Telegram test delivered" }, { "Telegram test failed: ${it.message}" })
-                        refreshReadiness()
+                        refreshReadinessAsync()
                     }
                 }
             }
@@ -127,7 +130,8 @@ class MainActivity : Activity() {
 
         root.addView(status)
         setContentView(scroll)
-        refreshReadiness()
+        restoreSetupAsync(chatId, equity, risk, markets, timeframes, watchlist, nseLinks, swingDays)
+        refreshReadinessAsync()
         handleShare(intent)
     }
 
@@ -171,24 +175,57 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun refreshReadiness() {
-        val savedProfile = runCatching { profileStore.load() }.getOrNull()
-        val savedToken = runCatching { SecureTokenStore(this).load() }.getOrNull()
-        val savedLinks = savedProfile?.let { profile ->
-            runCatching { nseLinkStore.load(profile.watchlist.toSet()) }.getOrDefault(emptyList())
-        } ?: emptyList()
-        val gate = RuntimeReadinessChecker.evaluate(
-            profile = savedProfile,
-            telegramToken = savedToken,
-            automaticSourceConfigured = false,
-        )
-        readiness.text = buildString {
-            append("Profile: ").append(if (gate.profileReady) "READY" else "NOT READY")
-            append(" | Telegram: ").append(if (gate.telegramReady) "READY" else "NOT READY")
-            append(" | NSE links: ").append(savedLinks.size)
-            append(" | Automatic analysis: ").append(if (gate.automaticAnalysisReady) "READY" else "LOCKED")
-            if (savedLinks.isNotEmpty()) append("\nNSE links identify instruments only until lawful machine-readable price data is verified.")
-            if (gate.reasons.isNotEmpty()) append("\n").append(gate.reasons.joinToString(" "))
+    private fun restoreSetupAsync(
+        chatId: EditText,
+        equity: EditText,
+        risk: EditText,
+        markets: EditText,
+        timeframes: EditText,
+        watchlist: EditText,
+        nseLinks: EditText,
+        swingDays: EditText,
+    ) {
+        ioExecutor.execute {
+            val saved = runCatching { profileStore.load() }.getOrNull() ?: return@execute
+            val links = runCatching { nseLinkStore.load(saved.watchlist.toSet()) }.getOrDefault(emptyList())
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                chatId.setText(saved.privateChatId)
+                equity.setText(saved.accountEquity.toString())
+                risk.setText(saved.riskPercent.toString())
+                markets.setText(saved.markets.joinToString(","))
+                timeframes.setText(saved.timeframes.joinToString(","))
+                watchlist.setText(saved.watchlist.joinToString("\n"))
+                nseLinks.setText(links.joinToString("\n") { it.url })
+                swingDays.setText(saved.swingHoldingDays.toString())
+                status.text = "Secure setup restored"
+            }
+        }
+    }
+
+    private fun refreshReadinessAsync() {
+        ioExecutor.execute {
+            val savedProfile = runCatching { profileStore.load() }.getOrNull()
+            val savedToken = runCatching { SecureTokenStore(this).load() }.getOrNull()
+            val savedLinks = savedProfile?.let { profile ->
+                runCatching { nseLinkStore.load(profile.watchlist.toSet()) }.getOrDefault(emptyList())
+            } ?: emptyList()
+            val gate = RuntimeReadinessChecker.evaluate(
+                profile = savedProfile,
+                telegramToken = savedToken,
+                automaticSourceConfigured = false,
+            )
+            val text = buildString {
+                append("Profile: ").append(if (gate.profileReady) "READY" else "NOT READY")
+                append(" | Telegram: ").append(if (gate.telegramReady) "READY" else "NOT READY")
+                append(" | NSE links: ").append(savedLinks.size)
+                append(" | Automatic analysis: ").append(if (gate.automaticAnalysisReady) "READY" else "LOCKED")
+                if (savedLinks.isNotEmpty()) append("\nNSE links identify instruments only until lawful machine-readable price data is verified.")
+                if (gate.reasons.isNotEmpty()) append("\n").append(gate.reasons.joinToString(" "))
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) readiness.text = text
+            }
         }
     }
 
