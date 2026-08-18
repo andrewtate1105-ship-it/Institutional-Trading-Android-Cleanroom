@@ -45,7 +45,7 @@ class ClosedBarAlertsTest {
     }
 
     @Test fun formatterIncludesEveryRequiredAlertField() {
-        val text = AlertFormatter.telegram(alert())
+        val text = AlertFormatter.inApp(alert())
         listOf(
             "Direction:", "Symbol:", "Timeframe:", "Source timestamp:", "Entry zone:",
             "Invalidation:", "Stop loss:", "Targets:", "Reward-to-risk:",
