@@ -16,11 +16,15 @@ data class ImportedMarketData(
     fun requireMatches(requestedSymbol: String, requestedTimeframe: String): List<BacktestRow> {
         val normalizedSymbol = requestedSymbol.trim().uppercase(Locale.ROOT)
         val normalizedTimeframe = requestedTimeframe.trim().uppercase(Locale.ROOT)
-        require(normalizedSymbol == symbol.trim().uppercase(Locale.ROOT)) {
-            "Loaded market data belongs to $symbol, not $normalizedSymbol. Re-import data for the selected stock."
+        if (normalizedSymbol != symbol.trim().uppercase(Locale.ROOT)) {
+            throw MarketDataUnavailableException(
+                "Loaded market data belongs to $symbol, not $normalizedSymbol. Re-import data for the selected stock."
+            )
         }
-        require(normalizedTimeframe == timeframe.trim().uppercase(Locale.ROOT)) {
-            "Loaded market data is bound to $timeframe, not $normalizedTimeframe. Re-import data for the selected timeframe."
+        if (normalizedTimeframe != timeframe.trim().uppercase(Locale.ROOT)) {
+            throw MarketDataUnavailableException(
+                "Loaded market data is bound to $timeframe, not $normalizedTimeframe. Re-import data for the selected timeframe."
+            )
         }
         return rows
     }
