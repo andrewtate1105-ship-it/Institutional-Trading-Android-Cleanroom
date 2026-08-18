@@ -9,6 +9,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -88,6 +89,7 @@ class MainActivity : Activity() {
                             timeframe = input.timeframe,
                             provenance = "USER_SUPPLIED_CLOSED_BAR_CSV",
                         )
+                        LatestBarFreshness.requireCurrent(series, Instant.now())
                         InAppSignalEngine.format(
                             InAppSignalEngine.analyze(
                                 series = series,
@@ -114,7 +116,7 @@ class MainActivity : Activity() {
         root.addView(resultView)
 
         root.addView(TextView(this).apply {
-            text = "Risk rule: directional setups are accepted only when the structural stop is 1-2% from entry and account risk stays at or below the selected 1-2% cap. Otherwise the result is NO TRADE."
+            text = "Risk rule: directional setups are accepted only when the structural stop is 1-2% from entry and account risk stays at or below the selected 1-2% cap. Stale bars are rejected. Otherwise the result is NO TRADE."
         })
 
         setContentView(scroll)
@@ -148,7 +150,7 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 result.onSuccess { (rows, summary) ->
                     importedRows = rows
-                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded (${summary.firstTimestamp} to ${summary.lastTimestamp})."
+                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded (${summary.firstTimestamp} to ${summary.lastTimestamp}). Freshness will be checked against the selected timeframe before any signal is shown."
                 }.onFailure { error ->
                     importedRows = null
                     dataStatus.text = "Market data: REJECTED — ${error.message}"
