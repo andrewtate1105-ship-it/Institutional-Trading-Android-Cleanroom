@@ -17,14 +17,20 @@ object LatestBarFreshness {
 
         val latest = series.bars.last()
         val sourceTime = runCatching { Instant.parse(latest.sourceTimestamp) }
-            .getOrElse { throw IllegalArgumentException("Latest source timestamp must be ISO-8601 UTC") }
-        require(sourceTime.toString() == latest.sourceTimestamp) { "Latest source timestamp must be canonical UTC" }
-        require(!sourceTime.isAfter(now)) { "Latest closed bar timestamp is in the future" }
+            .getOrElse { throw MarketDataUnavailableException("Latest source timestamp must be ISO-8601 UTC") }
+        if (sourceTime.toString() != latest.sourceTimestamp) {
+            throw MarketDataUnavailableException("Latest source timestamp must be canonical UTC")
+        }
+        if (sourceTime.isAfter(now)) {
+            throw MarketDataUnavailableException("Latest closed bar timestamp is in the future")
+        }
 
         val age = Duration.between(sourceTime, now)
         val maxAge = maxAgeFor(series.timeframe)
-        require(age <= maxAge) {
-            "Latest closed bar is stale for ${series.timeframe} analysis (${age.toMinutes()} minutes old; maximum ${maxAge.toMinutes()} minutes). Load current machine-readable closed-bar data."
+        if (age > maxAge) {
+            throw MarketDataUnavailableException(
+                "Latest closed bar is stale for ${series.timeframe} analysis (${age.toMinutes()} minutes old; maximum ${maxAge.toMinutes()} minutes). Load current machine-readable closed-bar data."
+            )
         }
         return series
     }
