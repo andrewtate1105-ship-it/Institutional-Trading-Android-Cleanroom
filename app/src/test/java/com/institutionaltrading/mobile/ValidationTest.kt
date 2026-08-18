@@ -11,7 +11,6 @@ class ValidationTest {
     @Test fun acceptsRequiredDefaults() {
         val profile = Validation.profile(
             OperatorProfile(
-                "123456789",
                 100000.0,
                 1.0,
                 allMarkets,
@@ -24,7 +23,7 @@ class ValidationTest {
         assertEquals(setOf("5M", "15M", "1H", "D", "W"), Validation.defaultTimeframes)
     }
 
-    @Test fun acceptsExactRequestedMultilineWatchlist() {
+    @Test fun acceptsRequiredMultilineWatchlist() {
         val raw = """
             RELIANCE
             TCS
@@ -45,7 +44,7 @@ class ValidationTest {
         """.trimIndent()
         val parsed = InputNormalizer.parseList(raw)
         val profile = Validation.profile(
-            OperatorProfile("8850805173", 100000.0, 1.0, allMarkets, Validation.defaultTimeframes, parsed, 5)
+            OperatorProfile(100000.0, 1.0, allMarkets, Validation.defaultTimeframes, parsed, 5)
         )
         assertEquals(16, profile.watchlist.size)
         assertTrue("CUPID" in profile.watchlist)
@@ -56,7 +55,7 @@ class ValidationTest {
     @Test fun normalizesLowercaseAndIgnoresBlankLines() {
         val parsed = InputNormalizer.parseList("reliance\n\n tcs, cupid")
         val profile = Validation.profile(
-            OperatorProfile("8850805173", 100000.0, 1.0, allMarkets, setOf("d"), parsed, 5)
+            OperatorProfile(100000.0, 1.0, allMarkets, setOf("d"), parsed, 5)
         )
         assertEquals(setOf("RELIANCE", "TCS", "CUPID"), profile.watchlist)
         assertEquals(setOf("D"), profile.timeframes)
@@ -65,7 +64,6 @@ class ValidationTest {
     @Test fun officialNseQuoteUrlIsNormalizedToSymbol() {
         val profile = Validation.profile(
             OperatorProfile(
-                "8850805173",
                 100000.0,
                 1.0,
                 allMarkets,
@@ -84,22 +82,15 @@ class ValidationTest {
         assertTrue(runCatching { Validation.normalizeWatchlistItem("INFY/../../") }.isFailure)
     }
 
-    @Test fun acceptsUserTelegramNumericChatId() {
-        val profile = Validation.profile(
-            OperatorProfile("8850805173", 100000.0, 1.0, allMarkets, setOf("D"), setOf("INFY"), 5)
-        )
-        assertEquals("8850805173", profile.privateChatId)
-    }
-
     @Test(expected = IllegalArgumentException::class) fun rejectsRiskAboveCap() {
         Validation.profile(
-            OperatorProfile("123456789", 100000.0, 2.01, allMarkets, setOf("D"), setOf("INFY"), 5)
+            OperatorProfile(100000.0, 2.01, allMarkets, setOf("D"), setOf("INFY"), 5)
         )
     }
 
     @Test(expected = IllegalArgumentException::class) fun rejectsEmptyWatchlist() {
         Validation.profile(
-            OperatorProfile("123456789", 100000.0, 1.0, allMarkets, setOf("D"), emptySet(), 5)
+            OperatorProfile(100000.0, 1.0, allMarkets, setOf("D"), emptySet(), 5)
         )
     }
 
