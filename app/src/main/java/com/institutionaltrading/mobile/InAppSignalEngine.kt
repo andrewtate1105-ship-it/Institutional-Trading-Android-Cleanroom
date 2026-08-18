@@ -10,7 +10,8 @@ data class InAppSignalResult(
     val sourceTimestamp: String,
     val entry: Double?,
     val stopLoss: Double?,
-    val target: Double?,
+    val target1: Double?,
+    val target2: Double?,
     val rewardToRisk: Double?,
     val riskPercentOfPrice: Double?,
     val quantity: Long,
@@ -29,7 +30,8 @@ data class InAppSignalResult(
 object InAppSignalEngine {
     private const val minStopPercent = 1.0
     private const val maxStopPercent = 2.0
-    private const val targetR = 2.0
+    private const val target1R = 1.0
+    private const val target2R = 2.0
 
     fun analyze(
         series: ValidatedBarSeries,
@@ -71,12 +73,17 @@ object InAppSignalEngine {
         }
 
         val stopDistance = abs(entry - stop)
-        val target = when (candidate.direction) {
-            CandidateDirection.LONG -> entry + targetR * stopDistance
-            CandidateDirection.SHORT -> entry - targetR * stopDistance
+        val target1 = when (candidate.direction) {
+            CandidateDirection.LONG -> entry + target1R * stopDistance
+            CandidateDirection.SHORT -> entry - target1R * stopDistance
             CandidateDirection.NONE -> error("NONE candidate passed directional branch")
         }
-        if (!target.isFinite() || target <= 0.0) {
+        val target2 = when (candidate.direction) {
+            CandidateDirection.LONG -> entry + target2R * stopDistance
+            CandidateDirection.SHORT -> entry - target2R * stopDistance
+            CandidateDirection.NONE -> error("NONE candidate passed directional branch")
+        }
+        if (!target1.isFinite() || !target2.isFinite() || target1 <= 0.0 || target2 <= 0.0) {
             return noTrade(series, latest.sourceTimestamp, "Calculated target is invalid", priceRiskPercent)
         }
 
@@ -91,8 +98,9 @@ object InAppSignalEngine {
             sourceTimestamp = latest.sourceTimestamp,
             entry = entry,
             stopLoss = stop,
-            target = target,
-            rewardToRisk = targetR,
+            target1 = target1,
+            target2 = target2,
+            rewardToRisk = target2R,
             riskPercentOfPrice = priceRiskPercent,
             quantity = sizing.quantity,
             estimatedAccountRisk = sizing.estimatedPositionRisk,
@@ -113,7 +121,8 @@ object InAppSignalEngine {
         sourceTimestamp = timestamp,
         entry = null,
         stopLoss = null,
-        target = null,
+        target1 = null,
+        target2 = null,
         rewardToRisk = null,
         riskPercentOfPrice = priceRiskPercent,
         quantity = 0L,
@@ -127,11 +136,13 @@ object InAppSignalEngine {
         append("Symbol: ").append(result.symbol).append(" | Timeframe: ").append(result.timeframe).append('\n')
         append("Closed-bar timestamp: ").append(result.sourceTimestamp).append('\n')
         if (result.direction != SignalDirection.NO_TRADE) {
-            append("Entry: ₹").append(format(result.entry!!)).append('\n')
-            append("Stop loss: ₹").append(format(result.stopLoss!!))
+            append("Entry zone: ₹").append(format(result.entry!!)).append(" (validated closed-bar trigger)\n")
+            append("Stop loss / invalidation: ₹").append(format(result.stopLoss!!))
                 .append(" (").append(format(result.riskPercentOfPrice!!)).append("%)\n")
-            append("Target: ₹").append(format(result.target!!)).append('\n')
-            append("Reward/Risk: 1:").append(format(result.rewardToRisk!!)).append('\n')
+            append("Target 1 (1R): ₹").append(format(result.target1!!)).append('\n')
+            append("Target 2 (2R): ₹").append(format(result.target2!!)).append('\n')
+            append("Exit guidance: take risk off at Target 1; final planned exit at Target 2 or structural stop, whichever occurs first.\n")
+            append("Reward/Risk to Target 2: 1:").append(format(result.rewardToRisk!!)).append('\n')
             append("Max quantity: ").append(result.quantity).append('\n')
             append("Estimated account risk: ₹").append(format(result.estimatedAccountRisk)).append('\n')
         }
