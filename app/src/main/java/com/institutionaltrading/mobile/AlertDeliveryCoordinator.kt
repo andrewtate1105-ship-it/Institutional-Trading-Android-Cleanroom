@@ -17,7 +17,7 @@ class AlertDeliveryCoordinator(
 ) {
     @Synchronized
     fun deliver(alert: SignalAlert): AlertDeliveryOutcome {
-        val text = runCatching { AlertFormatter.telegram(alert) }.getOrElse { return AlertDeliveryOutcome.STATE_FAILURE }
+        val text = runCatching { AlertFormatter.inApp(alert) }.getOrElse { return AlertDeliveryOutcome.STATE_FAILURE }
         val initial = runCatching { stateRepository.load() }.getOrElse { return AlertDeliveryOutcome.STATE_FAILURE }
         if (!ClosedBarAlerts.shouldDeliver(alert, initial)) return AlertDeliveryOutcome.DUPLICATE_OR_PENDING
 
@@ -39,7 +39,6 @@ class AlertDeliveryCoordinator(
         return if (runCatching { stateRepository.save(delivered) }.isSuccess) {
             AlertDeliveryOutcome.DELIVERED
         } else {
-            // Reservation remains durable, so a retry cannot duplicate a message whose final state is uncertain.
             AlertDeliveryOutcome.STATE_FAILURE
         }
     }
