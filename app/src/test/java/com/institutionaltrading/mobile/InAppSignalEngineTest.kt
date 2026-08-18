@@ -35,8 +35,20 @@ class InAppSignalEngineTest {
         assertTrue(runCatching { InAppSignalEngine.analyze(series, 10000.0, 1.0) }.isFailure)
     }
 
+    @Test fun accountRiskBelowRequiredBandIsRejected() {
+        val series = ValidatedBarSeries("RELIANCE", "15M", (0..5).map(::bar))
+        val failure = runCatching { InAppSignalEngine.analyze(series, 10000.0, 0.99) }
+        assertTrue(failure.isFailure)
+        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("between 1% and 2%"))
+    }
+
     @Test fun accountRiskAboveHardCapIsRejected() {
         val series = ValidatedBarSeries("RELIANCE", "15M", (0..5).map(::bar))
         assertTrue(runCatching { InAppSignalEngine.analyze(series, 10000.0, 2.01) }.isFailure)
+    }
+
+    @Test fun nonFiniteAccountRiskIsRejected() {
+        val series = ValidatedBarSeries("RELIANCE", "15M", (0..5).map(::bar))
+        assertTrue(runCatching { InAppSignalEngine.analyze(series, 10000.0, Double.NaN) }.isFailure)
     }
 }
