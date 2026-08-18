@@ -2,95 +2,61 @@ package com.institutionaltrading.mobile
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.text.InputType
 import android.view.ViewGroup
-import android.widget.*
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
-    private lateinit var status: TextView
-    private lateinit var readiness: TextView
-    private lateinit var profileStore: ProfileStore
-    private lateinit var nseLinkStore: NseLinkRegistryStore
+    private lateinit var stockInput: EditText
+    private lateinit var nseLinkInput: EditText
+    private lateinit var timeframeInput: EditText
+    private lateinit var capitalInput: EditText
+    private lateinit var riskInput: EditText
+    private lateinit var dataStatus: TextView
+    private lateinit var resultView: TextView
+    private var importedRows: List<BacktestRow>? = null
+
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "institutional-trading-io").apply { isDaemon = true }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        profileStore = ProfileStore(this)
-        nseLinkStore = NseLinkRegistryStore(this)
 
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
-        val scroll = ScrollView(this).apply { addView(root) }
-        root.addView(TextView(this).apply { text = "Institutional Trading System"; textSize = 22f })
-        root.addView(TextView(this).apply { text = "Signal-only Android build. No broker login and no automated orders." })
-        readiness = TextView(this)
-        root.addView(readiness)
-
-        val chatId = field(root, "Numeric Telegram chat ID from Telegram")
-        val token = field(root, "Telegram bot token", true)
-        val equity = field(root, "Account equity (INR)")
-        val risk = field(root, "Risk percent (max 2)").apply { setText("1") }
-        val markets = field(root, "Markets").apply { setText("NSE_EQUITY,NSE_INDEX,MCX_COMMODITY") }
-        val timeframes = field(root, "Timeframes").apply { setText("5M,15M,1H,D,W") }
-        val watchlist = field(root, "Watchlist: comma-separated or one item per line")
-        val nseLinks = field(root, "Official NSE quote URLs: one per line")
-        val swingDays = field(root, "Swing holding guidance (trading days)").apply { setText("5") }
-        status = TextView(this)
-
-        val saveButton = Button(this).apply {
-            text = "Save secure setup"
-            setOnClickListener {
-                val input = runCatching {
-                    val profile = OperatorProfile(
-                        chatId.text.toString().trim(),
-                        equity.text.toString().toDouble(),
-                        risk.text.toString().toDouble(),
-                        InputNormalizer.parseList(markets.text.toString()),
-                        InputNormalizer.parseList(timeframes.text.toString()),
-                        InputNormalizer.parseList(watchlist.text.toString()),
-                        swingDays.text.toString().toInt()
-                    )
-                    val urls = nseLinks.text.toString().lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
-                    NseLinkRegistryCodec.normalize(urls, profile.watchlist.toSet())
-                    Triple(profile, urls, token.text.toString().trim())
-                }
-                if (input.isFailure) {
-                    status.text = "Setup rejected: ${input.exceptionOrNull()?.message}"
-                    return@setOnClickListener
-                }
-
-                isEnabled = false
-                status.text = "Saving secure setup…"
-                ioExecutor.execute {
-                    val result = runCatching {
-                        val (profile, urls, rawToken) = input.getOrThrow()
-                        profileStore.save(profile)
-                        nseLinkStore.save(urls, profile.watchlist.toSet())
-                        SecureTokenStore(this@MainActivity).save(rawToken)
-                    }
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        isEnabled = true
-                        result.onSuccess {
-                            token.text.clear()
-                            status.text = "Setup and official NSE links saved securely"
-                        }.onFailure {
-                            status.text = "Setup rejected: ${it.message}"
-                        }
-                        refreshReadinessAsync()
-                    }
-                }
-            }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
         }
-        root.addView(saveButton)
+        val scroll = ScrollView(this).apply { addView(root) }
+
+        root.addView(TextView(this).apply {
+            text = "Trading Signal Assistant"
+            textSize = 24f
+        })
+        root.addView(TextView(this).apply {
+            text = "In-app signals only. No Telegram. No broker login. No automated orders."
+        })
+
+        stockInput = field(root, "Stock name or NSE symbol (e.g. ASHOKLEY)")
+        nseLinkInput = field(root, "Official NSE quote/chart link")
+        timeframeInput = field(root, "Trading timeframe: 5M, 15M, 1H, D or W").apply { setText("15M") }
+        capitalInput = field(root, "Trading capital (INR)").apply { setText("10000") }
+        riskInput = field(root, "Account risk per trade (1-2%)").apply { setText("1") }
+
+        dataStatus = TextView(this).apply {
+            text = "Market data: NOT LOADED. The NSE link identifies the instrument; it is not treated as a live price feed."
+        }
+        root.addView(dataStatus)
 
         root.addView(Button(this).apply {
-            text = "Import historical OHLC CSV"
+            text = "Import closed-bar OHLC CSV"
             setOnClickListener {
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
@@ -101,44 +67,57 @@ class MainActivity : Activity() {
         })
 
         root.addView(Button(this).apply {
-            text = "Send Telegram test"
+            text = "Analyze"
             setOnClickListener {
+                val request = runCatching { readRequest() }
+                if (request.isFailure) {
+                    resultView.text = "NO TRADE\n${request.exceptionOrNull()?.message}"
+                    return@setOnClickListener
+                }
+
                 isEnabled = false
-                status.text = "Checking secure Telegram setup…"
+                resultView.text = "Analyzing validated closed-bar data…"
                 ioExecutor.execute {
-                    val savedToken = runCatching { SecureTokenStore(this@MainActivity).load() }.getOrNull()
-                    val savedProfile = runCatching { profileStore.load() }.getOrNull()
-                    val gate = RuntimeReadinessChecker.evaluate(savedProfile, savedToken, automaticSourceConfigured = false)
-                    val result = if (!gate.telegramReady) {
-                        Result.failure(IllegalStateException(gate.reasons.joinToString(" ")))
-                    } else {
-                        TelegramClient.send(
-                            savedToken!!,
-                            savedProfile!!.privateChatId,
-                            "Institutional Trading System test: secure Telegram connection verified."
+                    val output = runCatching {
+                        val input = request.getOrThrow()
+                        val rows = importedRows
+                            ?: throw IllegalStateException("No validated machine-readable market bars are loaded. Import closed-bar OHLC CSV or configure a lawful data feed; no signal will be invented from the NSE webpage.")
+                        val series = HistoricalBarAdapter.toValidatedSeries(
+                            rows = rows,
+                            symbol = input.symbol,
+                            timeframe = input.timeframe,
+                            provenance = "USER_SUPPLIED_CLOSED_BAR_CSV",
                         )
-                    }
+                        InAppSignalEngine.format(
+                            InAppSignalEngine.analyze(
+                                series = series,
+                                accountEquity = input.capital,
+                                accountRiskPercent = input.riskPercent,
+                            )
+                        )
+                    }.getOrElse { error -> "NO TRADE\n${error.message}" }
+
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
                         isEnabled = true
-                        status.text = result.fold({ "Telegram test delivered" }, { "Telegram test failed: ${it.message}" })
-                        refreshReadinessAsync()
+                        resultView.text = output
                     }
                 }
             }
         })
 
-        root.addView(status)
-        setContentView(scroll)
-        restoreSetupAsync(chatId, equity, risk, markets, timeframes, watchlist, nseLinks, swingDays)
-        refreshReadinessAsync()
-        handleShare(intent)
-    }
+        resultView = TextView(this).apply {
+            textSize = 18f
+            text = "Signal result will appear here."
+            setPadding(0, 24, 0, 24)
+        }
+        root.addView(resultView)
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleShare(intent)
+        root.addView(TextView(this).apply {
+            text = "Risk rule: directional setups are accepted only when the structural stop is 1-2% from entry and account risk stays at or below the selected 1-2% cap. Otherwise the result is NO TRADE."
+        })
+
+        setContentView(scroll)
     }
 
     override fun onDestroy() {
@@ -152,99 +131,73 @@ class MainActivity : Activity() {
         if (requestCode != REQUEST_HISTORICAL_CSV || resultCode != RESULT_OK) return
         val uri = data?.data
         if (uri == null) {
-            status.text = "Historical CSV rejected: missing document"
+            dataStatus.text = "Market data: REJECTED — missing document"
             return
         }
 
-        status.text = "Validating historical CSV…"
+        dataStatus.text = "Market data: validating CSV…"
         ioExecutor.execute {
             val result = runCatching {
                 val bytes = contentResolver.openInputStream(uri)?.use(HistoricalDataIntake::readBounded)
                     ?: throw IllegalArgumentException("Could not read selected CSV")
-                HistoricalDataIntake.validateCsv(bytes)
+                val summary = HistoricalDataIntake.validateCsv(bytes)
+                val rows = BacktestCsvImporter.parse(bytes.toString(Charsets.UTF_8))
+                rows to summary
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                status.text = result.fold(
-                    onSuccess = { summary ->
-                        "Historical CSV validated: ${summary.rowCount} rows, ${summary.firstTimestamp} to ${summary.lastTimestamp}. Stored only for user-driven validation; automatic live analysis remains locked."
-                    },
-                    onFailure = { error -> "Historical CSV rejected: ${error.message}" },
-                )
+                result.onSuccess { (rows, summary) ->
+                    importedRows = rows
+                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded (${summary.firstTimestamp} to ${summary.lastTimestamp})."
+                }.onFailure { error ->
+                    importedRows = null
+                    dataStatus.text = "Market data: REJECTED — ${error.message}"
+                }
             }
         }
     }
 
-    private fun restoreSetupAsync(
-        chatId: EditText,
-        equity: EditText,
-        risk: EditText,
-        markets: EditText,
-        timeframes: EditText,
-        watchlist: EditText,
-        nseLinks: EditText,
-        swingDays: EditText,
-    ) {
-        ioExecutor.execute {
-            val saved = runCatching { profileStore.load() }.getOrNull() ?: return@execute
-            val links = runCatching { nseLinkStore.load(saved.watchlist.toSet()) }.getOrDefault(emptyList())
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                chatId.setText(saved.privateChatId)
-                equity.setText(saved.accountEquity.toString())
-                risk.setText(saved.riskPercent.toString())
-                markets.setText(saved.markets.joinToString(","))
-                timeframes.setText(saved.timeframes.joinToString(","))
-                watchlist.setText(saved.watchlist.joinToString("\n"))
-                nseLinks.setText(links.joinToString("\n") { it.url })
-                swingDays.setText(saved.swingHoldingDays.toString())
-                status.text = "Secure setup restored"
+    private fun readRequest(): AnalysisRequest {
+        val link = nseLinkInput.text.toString().trim()
+        val symbolFromUrl = OfficialNseUrl.normalizeToSymbol(link)
+            ?: throw IllegalArgumentException("Enter a supported official NSE quote/chart URL")
+
+        val typed = stockInput.text.toString().trim()
+        if (typed.isNotEmpty() && typed.matches(Regex("^[A-Za-z0-9&._-]{1,32}$"))) {
+            val typedSymbol = typed.uppercase(Locale.ROOT)
+            require(typedSymbol == symbolFromUrl) {
+                "Stock symbol and NSE link identify different instruments"
             }
         }
-    }
 
-    private fun refreshReadinessAsync() {
-        ioExecutor.execute {
-            val savedProfile = runCatching { profileStore.load() }.getOrNull()
-            val savedToken = runCatching { SecureTokenStore(this).load() }.getOrNull()
-            val savedLinks = savedProfile?.let { profile ->
-                runCatching { nseLinkStore.load(profile.watchlist.toSet()) }.getOrDefault(emptyList())
-            } ?: emptyList()
-            val gate = RuntimeReadinessChecker.evaluate(
-                profile = savedProfile,
-                telegramToken = savedToken,
-                automaticSourceConfigured = false,
-            )
-            val text = buildString {
-                append("Profile: ").append(if (gate.profileReady) "READY" else "NOT READY")
-                append(" | Telegram: ").append(if (gate.telegramReady) "READY" else "NOT READY")
-                append(" | NSE links: ").append(savedLinks.size)
-                append(" | Automatic analysis: ").append(if (gate.automaticAnalysisReady) "READY" else "LOCKED")
-                if (savedLinks.isNotEmpty()) append("\nNSE links identify instruments only until lawful machine-readable price data is verified.")
-                if (gate.reasons.isNotEmpty()) append("\n").append(gate.reasons.joinToString(" "))
-            }
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) readiness.text = text
-            }
+        val timeframe = timeframeInput.text.toString().trim().uppercase(Locale.ROOT)
+        require(timeframe in Validation.defaultTimeframes) { "Unsupported timeframe" }
+
+        val capital = capitalInput.text.toString().toDoubleOrNull()
+            ?: throw IllegalArgumentException("Trading capital must be numeric")
+        require(capital.isFinite() && capital > 0.0) { "Trading capital must be positive" }
+
+        val risk = riskInput.text.toString().toDoubleOrNull()
+            ?: throw IllegalArgumentException("Risk percent must be numeric")
+        require(risk.isFinite() && risk in 1.0..Validation.hardRiskCapPercent) {
+            "Risk percent must be between 1% and 2%"
         }
+
+        return AnalysisRequest(symbolFromUrl, timeframe, capital, risk)
     }
 
-    private fun handleShare(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("image/") != true) return
-        val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-        status.text = if (uri == null) {
-            "Screenshot rejected: missing image"
-        } else {
-            "Screenshot received. Add symbol, timeframe and capture time before analysis. Hidden prices or indicators will not be inferred."
-        }
-    }
-
-    private fun field(parent: LinearLayout, hint: String, password: Boolean = false) = EditText(this).apply {
+    private fun field(parent: LinearLayout, hint: String) = EditText(this).apply {
         this.hint = hint
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         parent.addView(this)
     }
+
+    private data class AnalysisRequest(
+        val symbol: String,
+        val timeframe: String,
+        val capital: Double,
+        val riskPercent: Double,
+    )
 
     companion object {
         private const val REQUEST_HISTORICAL_CSV = 1001
