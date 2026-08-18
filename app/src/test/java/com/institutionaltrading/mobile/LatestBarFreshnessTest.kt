@@ -34,22 +34,22 @@ class LatestBarFreshnessTest {
         assertEquals("ASHOKLEY", validated.symbol)
     }
 
-    @Test fun staleIntradayBarIsRejected() {
+    @Test fun staleIntradayBarIsRejectedAsDataUnavailable() {
         val now = Instant.parse("2026-08-19T04:00:00Z")
-        val failure = runCatching {
+        val error = runCatching {
             LatestBarFreshness.requireCurrent(series("2026-08-19T03:00:00Z"), now)
-        }
-        assertTrue(failure.isFailure)
-        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("stale"))
+        }.exceptionOrNull()
+        assertTrue(error is MarketDataUnavailableException)
+        assertTrue(error?.message.orEmpty().contains("stale"))
     }
 
-    @Test fun futureBarIsRejected() {
+    @Test fun futureBarIsRejectedAsDataUnavailable() {
         val now = Instant.parse("2026-08-19T04:00:00Z")
-        val failure = runCatching {
+        val error = runCatching {
             LatestBarFreshness.requireCurrent(series("2026-08-19T04:01:00Z"), now)
-        }
-        assertTrue(failure.isFailure)
-        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("future"))
+        }.exceptionOrNull()
+        assertTrue(error is MarketDataUnavailableException)
+        assertTrue(error?.message.orEmpty().contains("future"))
     }
 
     @Test fun freshnessWindowsMatchSupportedTimeframes() {
