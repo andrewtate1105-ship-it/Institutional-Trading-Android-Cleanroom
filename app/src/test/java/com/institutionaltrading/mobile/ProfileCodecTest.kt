@@ -2,11 +2,11 @@ package com.institutionaltrading.mobile
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertFalse as assertNotPresent
 import org.junit.Test
 
 class ProfileCodecTest {
     private val profile = OperatorProfile(
-        privateChatId = "-123456789012",
         accountEquity = 250000.0,
         riskPercent = 1.0,
         markets = setOf("NSE_EQUITY", "NSE_INDEX", "MCX_COMMODITY"),
@@ -19,8 +19,10 @@ class ProfileCodecTest {
         assertEquals(profile, ProfileCodec.decode(ProfileCodec.encode(profile)))
     }
 
-    @Test fun encodedProfileKeepsBrokerExecutionDisabled() {
-        assertFalse(org.json.JSONObject(ProfileCodec.encode(profile)).getBoolean("broker_execution_enabled"))
+    @Test fun encodedProfileKeepsBrokerExecutionDisabledAndContainsNoMessagingIdentity() {
+        val json = org.json.JSONObject(ProfileCodec.encode(profile))
+        assertFalse(json.getBoolean("broker_execution_enabled"))
+        assertNotPresent(json.has("private_chat_id"))
     }
 
     @Test(expected = IllegalArgumentException::class)
