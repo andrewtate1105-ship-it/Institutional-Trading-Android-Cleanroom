@@ -41,7 +41,7 @@ class MainActivity : Activity() {
             textSize = 24f
         })
         root.addView(TextView(this).apply {
-            text = "In-app signals only. No Telegram. No broker login. No automated orders."
+            text = "Signals stay inside the app. No broker login and no automated orders."
         })
 
         stockInput = field(root, "Stock name or NSE symbol (e.g. ASHOKLEY)")
@@ -163,11 +163,12 @@ class MainActivity : Activity() {
             ?: throw IllegalArgumentException("Enter a supported official NSE quote/chart URL")
 
         val typed = stockInput.text.toString().trim()
-        if (typed.isNotEmpty() && typed.matches(Regex("^[A-Za-z0-9&._-]{1,32}$"))) {
-            val typedSymbol = typed.uppercase(Locale.ROOT)
-            require(typedSymbol == symbolFromUrl) {
-                "Stock symbol and NSE link identify different instruments"
-            }
+        require(typed.matches(Regex("^[A-Za-z0-9&._-]{1,32}$"))) {
+            "Enter a valid NSE stock symbol"
+        }
+        val typedSymbol = typed.uppercase(Locale.ROOT)
+        require(typedSymbol == symbolFromUrl) {
+            "Stock symbol and NSE link identify different instruments"
         }
 
         val timeframe = timeframeInput.text.toString().trim().uppercase(Locale.ROOT)
