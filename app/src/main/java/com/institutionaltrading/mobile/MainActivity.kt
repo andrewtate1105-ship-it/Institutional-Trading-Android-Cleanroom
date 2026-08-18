@@ -22,7 +22,8 @@ class MainActivity : Activity() {
     private lateinit var riskInput: EditText
     private lateinit var dataStatus: TextView
     private lateinit var resultView: TextView
-    private var importedRows: List<BacktestRow>? = null
+    private var importedData: ImportedMarketData? = null
+    private var pendingImportContext: InstrumentContext? = null
 
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "institutional-trading-io").apply { isDaemon = true }
@@ -59,6 +60,15 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "Import closed-bar OHLC CSV"
             setOnClickListener {
+                val context = runCatching { readInstrumentContext() }
+                if (context.isFailure) {
+                    importedData = null
+                    pendingImportContext = null
+                    dataStatus.text = "Market data: REJECTED — ${context.exceptionOrNull()?.message}"
+                    return@setOnClickListener
+                }
+
+                pendingImportContext = context.getOrThrow()
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "text/*"
@@ -81,8 +91,9 @@ class MainActivity : Activity() {
                 ioExecutor.execute {
                     val output = runCatching {
                         val input = request.getOrThrow()
-                        val rows = importedRows
+                        val loaded = importedData
                             ?: throw IllegalStateException("No validated machine-readable market bars are loaded. Import closed-bar OHLC CSV or configure a lawful data feed; no signal will be invented from the NSE webpage.")
+                        val rows = loaded.requireMatches(input.symbol, input.timeframe)
                         val series = HistoricalBarAdapter.toValidatedSeries(
                             rows = rows,
                             symbol = input.symbol,
@@ -116,7 +127,7 @@ class MainActivity : Activity() {
         root.addView(resultView)
 
         root.addView(TextView(this).apply {
-            text = "Risk rule: directional setups are accepted only when the structural stop is 1-2% from entry and account risk stays at or below the selected 1-2% cap. Stale bars are rejected. Otherwise the result is NO TRADE."
+            text = "Risk rule: directional setups are accepted only when the structural stop is 1-2% from entry and account risk stays at or below the selected 1-2% cap. Stale bars are rejected. Imported bars are bound to the stock and timeframe selected at import. Otherwise the result is NO TRADE."
         })
 
         setContentView(scroll)
@@ -131,35 +142,44 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_HISTORICAL_CSV || resultCode != RESULT_OK) return
+        val context = pendingImportContext
+        pendingImportContext = null
+        if (context == null) {
+            importedData = null
+            dataStatus.text = "Market data: REJECTED — select a valid stock, NSE link and timeframe before importing data"
+            return
+        }
+
         val uri = data?.data
         if (uri == null) {
+            importedData = null
             dataStatus.text = "Market data: REJECTED — missing document"
             return
         }
 
-        dataStatus.text = "Market data: validating CSV…"
+        dataStatus.text = "Market data: validating CSV for ${context.symbol} ${context.timeframe}…"
         ioExecutor.execute {
             val result = runCatching {
                 val bytes = contentResolver.openInputStream(uri)?.use(HistoricalDataIntake::readBounded)
                     ?: throw IllegalArgumentException("Could not read selected CSV")
                 val summary = HistoricalDataIntake.validateCsv(bytes)
                 val rows = BacktestCsvImporter.parse(bytes.toString(Charsets.UTF_8))
-                rows to summary
+                ImportedMarketData(rows, context.symbol, context.timeframe) to summary
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                result.onSuccess { (rows, summary) ->
-                    importedRows = rows
-                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded (${summary.firstTimestamp} to ${summary.lastTimestamp}). Freshness will be checked against the selected timeframe before any signal is shown."
+                result.onSuccess { (loaded, summary) ->
+                    importedData = loaded
+                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded for ${loaded.symbol} ${loaded.timeframe} (${summary.firstTimestamp} to ${summary.lastTimestamp}). Freshness will be checked before any signal is shown."
                 }.onFailure { error ->
-                    importedRows = null
+                    importedData = null
                     dataStatus.text = "Market data: REJECTED — ${error.message}"
                 }
             }
         }
     }
 
-    private fun readRequest(): AnalysisRequest {
+    private fun readInstrumentContext(): InstrumentContext {
         val link = nseLinkInput.text.toString().trim()
         val symbolFromUrl = OfficialNseUrl.normalizeToSymbol(link)
             ?: throw IllegalArgumentException("Enter a supported official NSE quote/chart URL")
@@ -175,6 +195,11 @@ class MainActivity : Activity() {
 
         val timeframe = timeframeInput.text.toString().trim().uppercase(Locale.ROOT)
         require(timeframe in Validation.defaultTimeframes) { "Unsupported timeframe" }
+        return InstrumentContext(symbolFromUrl, timeframe)
+    }
+
+    private fun readRequest(): AnalysisRequest {
+        val context = readInstrumentContext()
 
         val capital = capitalInput.text.toString().toDoubleOrNull()
             ?: throw IllegalArgumentException("Trading capital must be numeric")
@@ -186,7 +211,7 @@ class MainActivity : Activity() {
             "Risk percent must be between 1% and 2%"
         }
 
-        return AnalysisRequest(symbolFromUrl, timeframe, capital, risk)
+        return AnalysisRequest(context.symbol, context.timeframe, capital, risk)
     }
 
     private fun field(parent: LinearLayout, hint: String) = EditText(this).apply {
@@ -194,6 +219,11 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         parent.addView(this)
     }
+
+    private data class InstrumentContext(
+        val symbol: String,
+        val timeframe: String,
+    )
 
     private data class AnalysisRequest(
         val symbol: String,
