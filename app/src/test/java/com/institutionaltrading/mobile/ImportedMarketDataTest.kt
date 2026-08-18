@@ -21,17 +21,17 @@ class ImportedMarketDataTest {
         assertSame(rows, data.requireMatches("ashokley", "15m"))
     }
 
-    @Test fun symbolMismatchFailsClosed() {
+    @Test fun symbolMismatchFailsClosedAsDataUnavailable() {
         val data = ImportedMarketData(rows, "ASHOKLEY", "15M")
         val error = runCatching { data.requireMatches("RELIANCE", "15M") }.exceptionOrNull()
-        assertTrue(error is IllegalArgumentException)
+        assertTrue(error is MarketDataUnavailableException)
         assertTrue(error?.message?.contains("Re-import data for the selected stock") == true)
     }
 
-    @Test fun timeframeMismatchFailsClosed() {
+    @Test fun timeframeMismatchFailsClosedAsDataUnavailable() {
         val data = ImportedMarketData(rows, "ASHOKLEY", "15M")
         val error = runCatching { data.requireMatches("ASHOKLEY", "1H") }.exceptionOrNull()
-        assertTrue(error is IllegalArgumentException)
+        assertTrue(error is MarketDataUnavailableException)
         assertTrue(error?.message?.contains("Re-import data for the selected timeframe") == true)
     }
 }
