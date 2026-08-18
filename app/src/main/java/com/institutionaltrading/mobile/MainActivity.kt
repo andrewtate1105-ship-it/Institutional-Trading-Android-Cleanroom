@@ -46,14 +46,14 @@ class MainActivity : Activity() {
             text = "Signals stay inside the app. No broker login and no automated orders."
         })
 
-        stockInput = field(root, "Stock name or NSE symbol (e.g. ASHOKLEY)")
+        stockInput = field(root, "NSE stock symbol (e.g. ASHOKLEY)")
         nseLinkInput = field(root, "Official NSE quote/chart link")
         timeframeInput = field(root, "Trading timeframe: 5M, 15M, 1H, D or W").apply { setText("15M") }
         capitalInput = field(root, "Trading capital (INR)").apply { setText("10000") }
         riskInput = field(root, "Account risk per trade (1-2%)").apply { setText("1") }
 
         dataStatus = TextView(this).apply {
-            text = "Market data: NOT LOADED. The NSE link identifies the instrument; it is not treated as a live price feed."
+            text = "Market data: DATA UNAVAILABLE. Load validated machine-readable closed bars before analysis. The NSE link identifies the instrument; it is not treated as a live price feed."
         }
         root.addView(dataStatus)
 
@@ -82,7 +82,7 @@ class MainActivity : Activity() {
             setOnClickListener {
                 val request = runCatching { readRequest() }
                 if (request.isFailure) {
-                    resultView.text = "NO TRADE\n${request.exceptionOrNull()?.message}"
+                    resultView.text = AnalysisFailurePresentation.format(request.exceptionOrNull()!!)
                     return@setOnClickListener
                 }
 
@@ -92,7 +92,7 @@ class MainActivity : Activity() {
                     val output = runCatching {
                         val input = request.getOrThrow()
                         val loaded = importedData
-                            ?: throw IllegalStateException("No validated machine-readable market bars are loaded. Import closed-bar OHLC CSV or configure a lawful data feed; no signal will be invented from the NSE webpage.")
+                            ?: throw MarketDataUnavailableException("No validated machine-readable market bars are loaded. Import closed-bar OHLC CSV or configure a lawful data feed; no signal will be invented from the NSE webpage.")
                         val rows = loaded.requireMatches(input.symbol, input.timeframe)
                         val series = HistoricalBarAdapter.toValidatedSeries(
                             rows = rows,
@@ -108,7 +108,7 @@ class MainActivity : Activity() {
                                 accountRiskPercent = input.riskPercent,
                             )
                         )
-                    }.getOrElse { error -> "NO TRADE\n${error.message}" }
+                    }.getOrElse(AnalysisFailurePresentation::format)
 
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
