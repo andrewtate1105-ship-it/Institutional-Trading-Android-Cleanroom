@@ -1,7 +1,7 @@
 package com.institutionaltrading.mobile
 
 object AlertFormatter {
-    fun telegram(alert: SignalAlert): String {
+    fun inApp(alert: SignalAlert): String {
         ClosedBarAlerts.key(alert)
         require(alert.provenance.isNotBlank()) { "Source provenance is required" }
         require(alert.warnings.isNotEmpty()) { "At least one warning is required" }
@@ -22,6 +22,6 @@ object AlertFormatter {
             appendLine("Confidence diagnostics: ${alert.confidenceDiagnostics}")
             appendLine("Source provenance: ${alert.provenance}")
             append("Warnings: $warnings")
-        }.also { require(it.length <= 4096) { "Telegram alert is too long" } }
+        }
     }
 }
