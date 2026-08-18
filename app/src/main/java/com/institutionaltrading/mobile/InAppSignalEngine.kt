@@ -25,9 +25,10 @@ data class InAppSignalResult(
  *
  * It never places orders. A directional setup is accepted only when the existing
  * structural candidate has an entry and stop, the stop is 1-2% from entry, and
- * position sizing stays inside the configured account-risk cap.
+ * position sizing stays inside the configured 1-2% account-risk band.
  */
 object InAppSignalEngine {
+    private const val minAccountRiskPercent = 1.0
     private const val minStopPercent = 1.0
     private const val maxStopPercent = 2.0
     private const val target1R = 1.0
@@ -40,8 +41,8 @@ object InAppSignalEngine {
     ): InAppSignalResult {
         require(series.bars.isNotEmpty()) { "Validated bar series is empty" }
         require(series.bars.all { it.isClosed }) { "In-app signal engine accepts closed bars only" }
-        require(accountRiskPercent > 0.0 && accountRiskPercent <= Validation.hardRiskCapPercent) {
-            "Account risk must be above 0 and at most 2%"
+        require(accountRiskPercent.isFinite() && accountRiskPercent in minAccountRiskPercent..Validation.hardRiskCapPercent) {
+            "Account risk must be between 1% and 2%"
         }
 
         val candidate = TrendFollowingCandidate.evaluate(series)
