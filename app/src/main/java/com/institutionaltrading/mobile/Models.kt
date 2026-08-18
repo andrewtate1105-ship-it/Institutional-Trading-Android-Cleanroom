@@ -1,7 +1,6 @@
 package com.institutionaltrading.mobile
 
 data class OperatorProfile(
-    val privateChatId: String,
     val accountEquity: Double,
     val riskPercent: Double,
     val markets: Set<String>,
