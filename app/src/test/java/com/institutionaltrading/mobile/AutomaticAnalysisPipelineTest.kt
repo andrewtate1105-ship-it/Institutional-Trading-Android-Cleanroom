@@ -55,7 +55,7 @@ class AutomaticAnalysisPipelineTest {
         assertEquals("RELIANCE", alert.symbol)
         assertEquals("2026-08-07T09:45:00Z", alert.sourceTimestamp)
         assertTrue(alert.warnings.any { it.contains("DELAYED") && it.contains("not be described as real-time") })
-        assertTrue(AlertFormatter.telegram(alert).contains("Direction: NO_TRADE"))
+        assertTrue(AlertFormatter.inApp(alert).contains("Direction: NO_TRADE"))
     }
 
     @Test fun rejectsManualOrScreenshotSourcesAtAutomaticBoundary() {
