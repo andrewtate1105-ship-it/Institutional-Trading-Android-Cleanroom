@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TradingViewWebSocketHtmlTest {
-    @Test fun rendersReadOnlyNseChartSession() {
+    @Test fun rendersReadOnlyNseChartSessionWithDelayedFeedGuard() {
         val html = TradingViewWebSocketHtml.render(
             symbol = "ASHOKLEY",
             timeframe = "15M",
@@ -17,6 +17,11 @@ class TradingViewWebSocketHtmlTest {
         assertTrue(html.contains("chart_create_session"))
         assertTrue(html.contains("resolve_symbol"))
         assertTrue(html.contains("create_series"))
+        assertTrue(html.contains("symbol_resolved"))
+        assertTrue(html.contains("isExplicitlyDelayed"))
+        assertTrue(html.contains("is_delayed"))
+        assertTrue(html.contains("data_status"))
+        assertTrue(html.contains("delayed market data"))
         assertTrue(html.contains("'15'"))
         assertFalse(html.contains("place_order", ignoreCase = true))
     }
