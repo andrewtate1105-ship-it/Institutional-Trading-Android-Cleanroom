@@ -14,6 +14,11 @@ val releaseSigningReady = listOf(
     releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
 
+val marketDataBaseUrl = System.getenv("MARKET_DATA_BASE_URL")?.trim().orEmpty()
+val marketDataBaseUrlLiteral = marketDataBaseUrl
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "com.institutionaltrading.mobile"
     compileSdk = 35
@@ -25,6 +30,7 @@ android {
         versionCode = 2
         versionName = "0.2.0-cleanroom"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "MARKET_DATA_BASE_URL", "\"$marketDataBaseUrlLiteral\"")
     }
 
     signingConfigs {
@@ -48,6 +54,8 @@ android {
             }
         }
     }
+
+    buildFeatures { buildConfig = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
