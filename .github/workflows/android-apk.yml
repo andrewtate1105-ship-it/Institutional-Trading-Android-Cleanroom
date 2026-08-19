@@ -23,6 +23,7 @@ jobs:
       ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
       ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
       ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      MARKET_DATA_BASE_URL: ${{ vars.MARKET_DATA_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +31,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - uses: actions/setup-python@v5
         with:
@@ -61,6 +66,21 @@ jobs:
           ! grep -RIE --exclude-dir=.git 'placeOrder|executeOrder|brokerLogin|growwPassword' app/src
           ! grep -RIE --exclude-dir=.git 'telegram|api\.telegram\.org|botfather|sendMessage|chat_id' app/src
           ! grep -q 'android.permission.POST_NOTIFICATIONS' app/src/main/AndroidManifest.xml
+
+      - name: Verify TradingView market-data adapter
+        working-directory: market-data-service
+        run: |
+          set -euo pipefail
+          npm install --omit=dev --ignore-scripts --package-lock=false
+          node --check server.js
+
+      - name: Verify configured market-data service health
+        if: env.MARKET_DATA_BASE_URL != ''
+        run: |
+          set -euo pipefail
+          base="${MARKET_DATA_BASE_URL%/}"
+          response=$(curl --fail --silent --show-error --max-time 10 "$base/health")
+          printf '%s' "$response" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
 
       - name: Prepare optional release signing
         run: |
@@ -103,7 +123,7 @@ jobs:
           mkdir -p dist
           cp "$src" dist/Institutional-Trading-System-Android.apk
           cp INSTALL_ANDROID.txt dist/INSTALL_ANDROID.txt
-          printf 'build_type=%s\nrelease_signing=%s\nrelease_path_verified=true\n' "$APK_BUILD_TYPE" "$RELEASE_SIGNING_READY" > dist/BUILD_INFO.txt
+          printf 'build_type=%s\nrelease_signing=%s\nrelease_path_verified=true\nmarket_data_configured=%s\n' "$APK_BUILD_TYPE" "$RELEASE_SIGNING_READY" "$([ -n "${MARKET_DATA_BASE_URL:-}" ] && echo true || echo false)" > dist/BUILD_INFO.txt
 
           unzip -l dist/Institutional-Trading-System-Android.apk > /tmp/apk-list.txt
           grep -q 'classes.dex' /tmp/apk-list.txt
