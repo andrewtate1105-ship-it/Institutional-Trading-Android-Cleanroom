@@ -3,6 +3,22 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseStoreFile = System.getenv("ANDROID_RELEASE_STORE_FILE")
+val releaseStorePassword = System.getenv("ANDROID_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+val releaseSigningReady = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
+val marketDataBaseUrl = System.getenv("MARKET_DATA_BASE_URL")?.trim().orEmpty()
+val marketDataBaseUrlLiteral = marketDataBaseUrl
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "com.institutionaltrading.mobile"
     compileSdk = 35
@@ -11,9 +27,21 @@ android {
         applicationId = "com.institutionaltrading.mobile"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-cleanroom"
+        versionCode = 3
+        versionName = "0.3.0-tradingview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "MARKET_DATA_BASE_URL", "\"$marketDataBaseUrlLiteral\"")
+    }
+
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -21,8 +49,13 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
+
+    buildFeatures { buildConfig = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -33,4 +66,5 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
 }

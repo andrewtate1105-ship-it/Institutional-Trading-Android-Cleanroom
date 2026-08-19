@@ -19,15 +19,11 @@ object Validation {
 
     fun profile(profile: OperatorProfile): OperatorProfile {
         val normalized = profile.copy(
-            privateChatId = profile.privateChatId.trim(),
             markets = profile.markets.map { it.trim().uppercase(Locale.ROOT) }.filter { it.isNotEmpty() }.toSet(),
             timeframes = profile.timeframes.map { it.trim().uppercase(Locale.ROOT) }.filter { it.isNotEmpty() }.toSet(),
             watchlist = profile.watchlist.map(::normalizeWatchlistItem).toCollection(linkedSetOf()),
         )
 
-        require(normalized.privateChatId.matches(Regex("^-?[0-9]{5,20}$"))) {
-            "Enter the numeric Telegram chat ID shown by Telegram, not a username"
-        }
         require(normalized.accountEquity.isFinite() && normalized.accountEquity > 0.0) {
             "Account equity must be positive"
         }
