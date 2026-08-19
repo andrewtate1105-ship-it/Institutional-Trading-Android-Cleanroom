@@ -1,0 +1,17 @@
+{
+  "name": "institutional-trading-market-data-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fail-closed NSE closed-bar adapter for the Android signal assistant",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@mathieuc/tradingview": "3.5.2"
+  }
+}
