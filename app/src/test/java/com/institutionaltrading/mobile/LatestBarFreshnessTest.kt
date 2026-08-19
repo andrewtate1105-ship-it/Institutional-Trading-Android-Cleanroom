@@ -28,19 +28,19 @@ class LatestBarFreshnessTest {
     @Test fun freshLatestBarIsAccepted() {
         val now = Instant.parse("2026-08-19T04:00:00Z")
         val validated = LatestBarFreshness.requireCurrent(
-            series("2026-08-19T03:30:00Z"),
+            series("2026-08-19T03:40:00Z"),
             now,
         )
         assertEquals("ASHOKLEY", validated.symbol)
     }
 
-    @Test fun staleIntradayBarIsRejectedAsDataUnavailable() {
+    @Test fun likelyDelayedIntradayBarIsRejectedAsDataUnavailable() {
         val now = Instant.parse("2026-08-19T04:00:00Z")
         val error = runCatching {
-            LatestBarFreshness.requireCurrent(series("2026-08-19T03:00:00Z"), now)
+            LatestBarFreshness.requireCurrent(series("2026-08-19T03:30:00Z"), now)
         }.exceptionOrNull()
         assertTrue(error is MarketDataUnavailableException)
-        assertTrue(error?.message.orEmpty().contains("stale"))
+        assertTrue(error?.message.orEmpty().contains("delayed"))
     }
 
     @Test fun futureBarIsRejectedAsDataUnavailable() {
@@ -52,10 +52,10 @@ class LatestBarFreshnessTest {
         assertTrue(error?.message.orEmpty().contains("future"))
     }
 
-    @Test fun freshnessWindowsMatchSupportedTimeframes() {
-        assertEquals(15L, LatestBarFreshness.maxAgeFor("5M").toMinutes())
-        assertEquals(45L, LatestBarFreshness.maxAgeFor("15M").toMinutes())
-        assertEquals(180L, LatestBarFreshness.maxAgeFor("1H").toMinutes())
+    @Test fun freshnessWindowsRejectTypicalFifteenMinuteDelayedFeeds() {
+        assertEquals(10L, LatestBarFreshness.maxAgeFor("5M").toMinutes())
+        assertEquals(25L, LatestBarFreshness.maxAgeFor("15M").toMinutes())
+        assertEquals(70L, LatestBarFreshness.maxAgeFor("1H").toMinutes())
         assertEquals(4320L, LatestBarFreshness.maxAgeFor("D").toMinutes())
         assertEquals(20160L, LatestBarFreshness.maxAgeFor("W").toMinutes())
     }
