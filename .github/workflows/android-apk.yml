@@ -123,7 +123,7 @@ jobs:
           mkdir -p dist
           cp "$src" dist/Institutional-Trading-System-Android.apk
           cp INSTALL_ANDROID.txt dist/INSTALL_ANDROID.txt
-          printf 'build_type=%s\nrelease_signing=%s\nrelease_path_verified=true\nmarket_data_configured=%s\n' "$APK_BUILD_TYPE" "$RELEASE_SIGNING_READY" "$([ -n "${MARKET_DATA_BASE_URL:-}" ] && echo true || echo false)" > dist/BUILD_INFO.txt
+          printf 'build_type=%s\nrelease_signing=%s\nrelease_path_verified=true\ndirect_tradingview_data=true\noptional_market_data_service_configured=%s\n' "$APK_BUILD_TYPE" "$RELEASE_SIGNING_READY" "$([ -n "${MARKET_DATA_BASE_URL:-}" ] && echo true || echo false)" > dist/BUILD_INFO.txt
 
           unzip -l dist/Institutional-Trading-System-Android.apk > /tmp/apk-list.txt
           grep -q 'classes.dex' /tmp/apk-list.txt
@@ -138,8 +138,8 @@ jobs:
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Institutional-Trading-System-Android.apk > /tmp/badging.txt
           grep -q "package: name='com.institutionaltrading.mobile'" /tmp/badging.txt
-          grep -q "versionCode='2'" /tmp/badging.txt
-          grep -q "versionName='0.2.0-cleanroom'" /tmp/badging.txt
+          grep -q "versionCode='3'" /tmp/badging.txt
+          grep -q "versionName='0.3.0-tradingview'" /tmp/badging.txt
           grep -q "sdkVersion:'24'" /tmp/badging.txt
           grep -q "targetSdkVersion:'35'" /tmp/badging.txt
 
