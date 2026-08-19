@@ -113,8 +113,7 @@ object TradingViewWebSocketHtml {
                 }
               };
 
-              const timer = setTimeout(() => fail('TradingView request timed out before full history loaded'), 12000);
-              const originalSuccess = AndroidBridge.onSuccess;
+              setTimeout(() => fail('TradingView request timed out before full history loaded'), 12000);
               ws = new WebSocket('wss://data.tradingview.com/socket.io/websocket?from=chart&type=chart');
               ws.onopen = () => {
                 send('set_auth_token', ['unauthorized_user_token']);
@@ -125,13 +124,6 @@ object TradingViewWebSocketHtml {
               ws.onmessage = (event) => parse(event.data);
               ws.onerror = () => fail('TradingView websocket error');
               ws.onclose = () => { if (!done) fail('TradingView websocket closed before data completed'); };
-
-              const bridgeSuccess = AndroidBridge.onSuccess.bind(AndroidBridge);
-              AndroidBridge.onSuccess = (token, payload) => {
-                clearTimeout(timer);
-                bridgeSuccess(token, payload);
-              };
-              void originalSuccess;
             })();
             </script></body></html>
         """.trimIndent()
