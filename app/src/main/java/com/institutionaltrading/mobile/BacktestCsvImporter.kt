@@ -3,6 +3,7 @@ package com.institutionaltrading.mobile
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** Validated historical row used only for backtesting/statistical validation. */
@@ -81,14 +82,20 @@ object BacktestCsvImporter {
 
     private fun parseTimestamp(value: String, rowNumber: Int): String {
         require(value.isNotBlank()) { "Timestamp is empty at row $rowNumber" }
-        val instant = runCatching { Instant.parse(value) }.getOrElse {
-            runCatching { LocalDate.parse(value).atStartOfDay().toInstant(ZoneOffset.UTC) }
-                .getOrElse { throw IllegalArgumentException("Timestamp is invalid at row $rowNumber") }
+
+        // TradingView/JavaScript emits canonical UTC instants such as
+        // 2026-08-19T09:15:00.000Z. Instant.toString() normalizes that to
+        // 2026-08-19T09:15:00Z, so string equality is not a valid canonicality test.
+        runCatching { Instant.parse(value) }.getOrNull()?.let { instant ->
+            val canonicalMillis = DateTimeFormatter.ISO_INSTANT.format(instant)
+            require(value.endsWith("Z")) { "Timestamp must be UTC at row $rowNumber" }
+            return canonicalMillis
         }
-        require(instant.toString() == value || runCatching { LocalDate.parse(value) }.isSuccess) {
-            "Timestamp must be canonical ISO-8601 UTC or ISO date at row $rowNumber"
+
+        val date = runCatching { LocalDate.parse(value) }.getOrElse {
+            throw IllegalArgumentException("Timestamp is invalid at row $rowNumber")
         }
-        return instant.toString()
+        return date.atStartOfDay().toInstant(ZoneOffset.UTC).toString()
     }
 
     private fun parseNumber(value: String, label: String, rowNumber: Int): Double {
