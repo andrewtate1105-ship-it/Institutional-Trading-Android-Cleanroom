@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var dataStatus: TextView
     private lateinit var resultView: TextView
     private lateinit var chartView: WebView
+    private lateinit var liveDataSource: TradingViewWebSocketDataSource
     private var importedData: ImportedMarketData? = null
     private var pendingImportContext: InstrumentContext? = null
     private var resolvedIdentity: InstrumentIdentity? = null
@@ -48,7 +49,7 @@ class MainActivity : Activity() {
             textSize = 24f
         })
         root.addView(TextView(this).apply {
-            text = "Type an NSE stock, choose timeframe and risk, then analyze. Signals stay inside the app; no broker login or automated orders."
+            text = "Type an NSE stock, choose timeframe and risk, then analyze. The app loads a TradingView chart and calculates the signal from validated closed bars. No broker login or automated orders."
         })
 
         stockInput = field(root, "Stock name or NSE symbol (e.g. Ashok Leyland Limited)")
@@ -57,11 +58,7 @@ class MainActivity : Activity() {
         riskInput = field(root, "Account risk per trade (1-2%)").apply { setText("1") }
 
         dataStatus = TextView(this).apply {
-            text = if (BuildConfig.MARKET_DATA_BASE_URL.isNotBlank()) {
-                "Automatic market data: READY. Stock names are resolved to NSE symbols through the configured TradingView adapter."
-            } else {
-                "Automatic market data: NOT CONFIGURED in this build. You can still import validated closed-bar CSV as a fallback."
-            }
+            text = "Automatic TradingView market data: READY. The newest potentially forming candle is excluded before analysis."
             setPadding(0, 16, 0, 16)
         }
         root.addView(dataStatus)
@@ -81,6 +78,9 @@ class MainActivity : Activity() {
         }
         root.addView(chartView)
 
+        liveDataSource = TradingViewWebSocketDataSource(this)
+        root.addView(liveDataSource.view)
+
         root.addView(Button(this).apply {
             text = "Analyze + load TradingView chart"
             setOnClickListener {
@@ -93,58 +93,53 @@ class MainActivity : Activity() {
                 val typedStock = stockInput.text.toString().trim()
                 val input = request.getOrThrow()
                 isEnabled = false
-                dataStatus.text = "Resolving stock and loading validated closed bars…"
+                dataStatus.text = "Resolving NSE stock…"
                 resultView.text = "Analyzing…"
 
                 ioExecutor.execute {
-                    val result = runCatching {
-                        val identity = resolveIdentity(typedStock)
-                        val loaded = if (BuildConfig.MARKET_DATA_BASE_URL.isNotBlank()) {
-                            RemoteMarketDataClient.fetch(
-                                baseUrl = BuildConfig.MARKET_DATA_BASE_URL,
+                    val identityResult = runCatching { TradingViewDirectSymbolResolver.resolve(typedStock) }
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        identityResult.onFailure { error ->
+                            isEnabled = true
+                            dataStatus.text = "Market data: UNAVAILABLE — ${error.message ?: "stock resolution failed"}"
+                            resultView.text = AnalysisFailurePresentation.format(error)
+                        }.onSuccess { identity ->
+                            resolvedIdentity = identity
+                            loadTradingViewChart(identity.symbol, input.timeframe)
+                            dataStatus.text = "Loading validated closed bars for ${identity.displayName} (${identity.symbol}) ${input.timeframe}…"
+                            liveDataSource.fetch(
                                 symbol = identity.symbol,
                                 timeframe = input.timeframe,
                                 limit = 200,
-                            )
-                        } else {
-                            importedData
-                                ?: throw MarketDataUnavailableException(
-                                    "Automatic market-data service is not configured. Import validated closed-bar CSV or install a build with MARKET_DATA_BASE_URL configured."
-                                )
-                        }
-                        val rows = loaded.requireMatches(identity.symbol, input.timeframe)
-                        val provenance = if (BuildConfig.MARKET_DATA_BASE_URL.isNotBlank()) {
-                            "TRADINGVIEW_UNOFFICIAL_NODE_ADAPTER"
-                        } else {
-                            "USER_SUPPLIED_CLOSED_BAR_CSV"
-                        }
-                        val series = HistoricalBarAdapter.toValidatedSeries(
-                            rows = rows,
-                            symbol = identity.symbol,
-                            timeframe = input.timeframe,
-                            provenance = provenance,
-                        )
-                        LatestBarFreshness.requireCurrent(series, Instant.now())
-                        val signal = InAppSignalEngine.analyze(
-                            series = series,
-                            accountEquity = input.capital,
-                            accountRiskPercent = input.riskPercent,
-                        )
-                        AnalysisSuccess(identity, loaded, InAppSignalEngine.format(signal))
-                    }
-
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        isEnabled = true
-                        result.onSuccess { success ->
-                            resolvedIdentity = success.identity
-                            importedData = success.loaded
-                            loadTradingViewChart(success.identity.symbol, input.timeframe)
-                            dataStatus.text = "Market data: READY — ${success.identity.displayName} (${success.identity.symbol}) ${input.timeframe}; validated closed bars loaded."
-                            resultView.text = success.formattedSignal
-                        }.onFailure { error ->
-                            dataStatus.text = "Market data: UNAVAILABLE — ${error.message ?: "unknown error"}"
-                            resultView.text = AnalysisFailurePresentation.format(error)
+                            ) { rowsResult ->
+                                rowsResult.onFailure { directError ->
+                                    val fallback = importedData
+                                    if (fallback == null) {
+                                        isEnabled = true
+                                        dataStatus.text = "Market data: UNAVAILABLE — ${directError.message ?: "TradingView feed failed"}"
+                                        resultView.text = AnalysisFailurePresentation.format(directError)
+                                    } else {
+                                        analyzeInBackground(
+                                            identity = identity,
+                                            loaded = fallback,
+                                            input = input,
+                                            provenance = "USER_SUPPLIED_CLOSED_BAR_CSV",
+                                            button = this,
+                                        )
+                                    }
+                                }.onSuccess { rows ->
+                                    val loaded = ImportedMarketData(rows, identity.symbol, input.timeframe)
+                                    importedData = loaded
+                                    analyzeInBackground(
+                                        identity = identity,
+                                        loaded = loaded,
+                                        input = input,
+                                        provenance = "TRADINGVIEW_DIRECT_WEBSOCKET",
+                                        button = this,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -185,7 +180,46 @@ class MainActivity : Activity() {
         setContentView(scroll)
     }
 
+    private fun analyzeInBackground(
+        identity: InstrumentIdentity,
+        loaded: ImportedMarketData,
+        input: AnalysisRequest,
+        provenance: String,
+        button: Button,
+    ) {
+        ioExecutor.execute {
+            val result = runCatching {
+                val rows = loaded.requireMatches(identity.symbol, input.timeframe)
+                val series = HistoricalBarAdapter.toValidatedSeries(
+                    rows = rows,
+                    symbol = identity.symbol,
+                    timeframe = input.timeframe,
+                    provenance = provenance,
+                )
+                LatestBarFreshness.requireCurrent(series, Instant.now())
+                val signal = InAppSignalEngine.analyze(
+                    series = series,
+                    accountEquity = input.capital,
+                    accountRiskPercent = input.riskPercent,
+                )
+                AnalysisSuccess(identity, InAppSignalEngine.format(signal))
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                button.isEnabled = true
+                result.onSuccess { success ->
+                    dataStatus.text = "Market data: READY — ${success.identity.displayName} (${success.identity.symbol}) ${input.timeframe}; validated closed bars loaded."
+                    resultView.text = success.formattedSignal
+                }.onFailure { error ->
+                    dataStatus.text = "Market data: REJECTED — ${error.message ?: "validation failed"}"
+                    resultView.text = AnalysisFailurePresentation.format(error)
+                }
+            }
+        }
+    }
+
     override fun onDestroy() {
+        liveDataSource.destroy()
         chartView.destroy()
         ioExecutor.shutdownNow()
         super.onDestroy()
@@ -230,17 +264,6 @@ class MainActivity : Activity() {
                 }
             }
         }
-    }
-
-    private fun resolveIdentity(typedStock: String): InstrumentIdentity {
-        if (BuildConfig.MARKET_DATA_BASE_URL.isNotBlank()) {
-            return RemoteMarketDataClient.resolveStock(BuildConfig.MARKET_DATA_BASE_URL, typedStock)
-        }
-        val symbol = typedStock.trim().uppercase(Locale.ROOT)
-        require(symbol.matches(Regex("^[A-Z0-9&._-]{1,32}$"))) {
-            "Without the automatic data service, enter the exact NSE symbol for CSV fallback analysis"
-        }
-        return InstrumentIdentity(symbol, symbol)
     }
 
     private fun readFallbackImportContext(): InstrumentContext {
@@ -309,7 +332,6 @@ class MainActivity : Activity() {
 
     private data class AnalysisSuccess(
         val identity: InstrumentIdentity,
-        val loaded: ImportedMarketData,
         val formattedSignal: String,
     )
 
