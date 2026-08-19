@@ -27,8 +27,8 @@ android {
         applicationId = "com.institutionaltrading.mobile"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-cleanroom"
+        versionCode = 3
+        versionName = "0.3.0-tradingview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MARKET_DATA_BASE_URL", "\"$marketDataBaseUrlLiteral\"")
     }
