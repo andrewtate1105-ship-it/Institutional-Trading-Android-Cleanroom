@@ -46,7 +46,7 @@ class MainActivity : Activity() {
             text = "Signals stay inside the app. No broker login and no automated orders."
         })
 
-        stockInput = field(root, "NSE stock symbol (e.g. ASHOKLEY)")
+        stockInput = field(root, "Stock name or NSE symbol (e.g. Ashok Leyland Limited)")
         nseLinkInput = field(root, "Official NSE quote/chart link")
         timeframeInput = field(root, "Trading timeframe: 5M, 15M, 1H, D or W").apply { setText("15M") }
         capitalInput = field(root, "Trading capital (INR)").apply { setText("10000") }
@@ -157,7 +157,7 @@ class MainActivity : Activity() {
             return
         }
 
-        dataStatus.text = "Market data: validating CSV for ${context.symbol} ${context.timeframe}…"
+        dataStatus.text = "Market data: validating CSV for ${context.displayName} (${context.symbol}) ${context.timeframe}…"
         ioExecutor.execute {
             val result = runCatching {
                 val bytes = contentResolver.openInputStream(uri)?.use(HistoricalDataIntake::readBounded)
@@ -170,7 +170,7 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 result.onSuccess { (loaded, summary) ->
                     importedData = loaded
-                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded for ${loaded.symbol} ${loaded.timeframe} (${summary.firstTimestamp} to ${summary.lastTimestamp}). Freshness will be checked before any signal is shown."
+                    dataStatus.text = "Market data: ${summary.rowCount} validated closed bars loaded for ${context.displayName} (${loaded.symbol}) ${loaded.timeframe} (${summary.firstTimestamp} to ${summary.lastTimestamp}). Freshness will be checked before any signal is shown."
                 }.onFailure { error ->
                     importedData = null
                     dataStatus.text = "Market data: REJECTED — ${error.message}"
@@ -180,22 +180,14 @@ class MainActivity : Activity() {
     }
 
     private fun readInstrumentContext(): InstrumentContext {
-        val link = nseLinkInput.text.toString().trim()
-        val symbolFromUrl = OfficialNseUrl.normalizeToSymbol(link)
-            ?: throw IllegalArgumentException("Enter a supported official NSE quote/chart URL")
-
-        val typed = stockInput.text.toString().trim()
-        require(typed.matches(Regex("^[A-Za-z0-9&._-]{1,32}$"))) {
-            "Enter a valid NSE stock symbol"
-        }
-        val typedSymbol = typed.uppercase(Locale.ROOT)
-        require(typedSymbol == symbolFromUrl) {
-            "Stock symbol and NSE link identify different instruments"
-        }
+        val identity = InstrumentIdentityResolver.resolve(
+            stockNameOrSymbol = stockInput.text.toString(),
+            officialNseUrl = nseLinkInput.text.toString(),
+        )
 
         val timeframe = timeframeInput.text.toString().trim().uppercase(Locale.ROOT)
         require(timeframe in Validation.defaultTimeframes) { "Unsupported timeframe" }
-        return InstrumentContext(symbolFromUrl, timeframe)
+        return InstrumentContext(identity.displayName, identity.symbol, timeframe)
     }
 
     private fun readRequest(): AnalysisRequest {
@@ -221,6 +213,7 @@ class MainActivity : Activity() {
     }
 
     private data class InstrumentContext(
+        val displayName: String,
         val symbol: String,
         val timeframe: String,
     )
