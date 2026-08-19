@@ -128,7 +128,7 @@ class MainActivity : Activity() {
 
     private fun analyzeInBackground(
         identity: InstrumentIdentity,
-        rows: List<BacktestCsvRow>,
+        rows: List<BacktestRow>,
         timeframe: String,
         button: Button,
     ) {
@@ -194,8 +194,6 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        // Equity is only used to satisfy the existing position-risk engine; it is not user-facing.
-        // Entry, stop and exit prices are independent of this value.
         private const val DEFAULT_ACCOUNT_EQUITY = 100000.0
         private const val DEFAULT_ACCOUNT_RISK_PERCENT = 1.0
     }
