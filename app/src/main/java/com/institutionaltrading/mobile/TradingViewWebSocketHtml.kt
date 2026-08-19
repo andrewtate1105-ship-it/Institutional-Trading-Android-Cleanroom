@@ -48,6 +48,19 @@ object TradingViewWebSocketHtml {
                 try { if (ws) ws.close(); } catch (_) {}
                 AndroidBridge.onError(TOKEN, String(message || 'TradingView data unavailable'));
               };
+              const isExplicitlyDelayed = (info) => {
+                if (!info || typeof info !== 'object') return false;
+                const delayValues = [info.delay, info.delay_sec, info.delay_seconds, info.data_delay]
+                  .map((value) => Number(value))
+                  .filter((value) => Number.isFinite(value));
+                if (delayValues.some((value) => value > 0)) return true;
+                if (info.is_delayed === true || info.delayed === true) return true;
+                const status = [info.data_status, info.update_mode, info.status, info.data_mode]
+                  .filter((value) => typeof value === 'string')
+                  .join(' ')
+                  .toLowerCase();
+                return status.includes('delay');
+              };
               const finish = () => {
                 if (done || periods.size < TARGET) return;
                 try {
@@ -93,6 +106,14 @@ object TradingViewWebSocketHtml {
                   if (packet.m === 'symbol_error' || packet.m === 'series_error' || packet.m === 'critical_error' || packet.m === 'protocol_error') {
                     fail(packet.m);
                     return;
+                  }
+                  if (packet.m === 'symbol_resolved') {
+                    const info = packet.p[2];
+                    if (isExplicitlyDelayed(info)) {
+                      fail('TradingView reports delayed market data for this NSE symbol; no current signal will be generated');
+                      return;
+                    }
+                    continue;
                   }
                   if (packet.m !== 'timescale_update' && packet.m !== 'du') continue;
                   const update = packet.p[1];
