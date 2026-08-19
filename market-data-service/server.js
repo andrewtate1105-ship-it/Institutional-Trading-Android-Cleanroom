@@ -13,6 +13,35 @@ function csvEscape(value) {
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+function normalizeName(value) {
+  return String(value)
+    .toUpperCase()
+    .replace(/\b(LIMITED|LTD)\b/g, '')
+    .replace(/[^A-Z0-9&]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function resolveNseStock(query) {
+  const typed = String(query || '').trim();
+  if (!typed || typed.length > 100) throw new Error('Enter a valid stock name or NSE symbol');
+
+  const results = await TradingView.searchMarketV3(typed, 'stock');
+  const nse = results.filter((item) => item.id?.startsWith('NSE:') && SYMBOL.test(String(item.symbol || '').toUpperCase()));
+  if (!nse.length) throw new Error('No matching NSE equity found');
+
+  const upper = typed.toUpperCase();
+  const exactSymbol = nse.find((item) => String(item.symbol).toUpperCase() === upper);
+  if (exactSymbol) return exactSymbol;
+
+  const normalized = normalizeName(typed);
+  const exactName = nse.find((item) => normalizeName(item.description) === normalized);
+  if (exactName) return exactName;
+
+  if (nse.length === 1) return nse[0];
+  throw new Error('Stock name is ambiguous; enter the NSE symbol');
+}
+
 function toCsv(periods) {
   const chronological = [...periods].sort((a, b) => a.time - b.time);
   if (chronological.length < 3) throw new Error('Insufficient closed-bar history');
@@ -82,6 +111,18 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true }));
       return;
     }
+
+    if (req.method === 'GET' && url.pathname === '/v1/resolve') {
+      const stock = await resolveNseStock(url.searchParams.get('q'));
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({
+        symbol: String(stock.symbol).toUpperCase(),
+        displayName: stock.description,
+        tradingViewId: `NSE:${String(stock.symbol).toUpperCase()}`,
+      }));
+      return;
+    }
+
     if (req.method !== 'GET' || url.pathname !== '/v1/ohlc') {
       res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: false, error: 'Not found' }));
@@ -112,4 +153,4 @@ server.listen(PORT, HOST, () => {
   console.log(`Market data service listening on http://${HOST}:${PORT}`);
 });
 
-module.exports = { toCsv };
+module.exports = { normalizeName, resolveNseStock, toCsv };
