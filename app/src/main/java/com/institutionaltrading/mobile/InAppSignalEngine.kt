@@ -20,13 +20,6 @@ data class InAppSignalResult(
     val provenance: String,
 )
 
-/**
- * Signal-only presentation engine for validated, closed-bar data.
- *
- * It never places orders. A directional setup is accepted only when the existing
- * structural candidate has an entry and stop, the stop is 1-2% from entry, and
- * position sizing stays inside the configured 1-2% account-risk band.
- */
 object InAppSignalEngine {
     private const val minAccountRiskPercent = 1.0
     private const val minStopPercent = 1.0
@@ -34,11 +27,7 @@ object InAppSignalEngine {
     private const val target1R = 1.0
     private const val target2R = 2.0
 
-    fun analyze(
-        series: ValidatedBarSeries,
-        accountEquity: Double,
-        accountRiskPercent: Double,
-    ): InAppSignalResult {
+    fun analyze(series: ValidatedBarSeries, accountEquity: Double, accountRiskPercent: Double): InAppSignalResult {
         require(series.bars.isNotEmpty()) { "Validated bar series is empty" }
         require(series.bars.all { it.isClosed }) { "In-app signal engine accepts closed bars only" }
         require(accountRiskPercent.isFinite() && accountRiskPercent in minAccountRiskPercent..Validation.hardRiskCapPercent) {
@@ -55,45 +44,23 @@ object InAppSignalEngine {
         val stop = candidate.structuralStop
         val priceRiskPercent = abs(entry - stop) / entry * 100.0
         if (!priceRiskPercent.isFinite() || priceRiskPercent !in minStopPercent..maxStopPercent) {
-            return noTrade(
-                series,
-                latest.sourceTimestamp,
-                "Structural stop is ${format(priceRiskPercent)}% from entry; required band is 1-2%. ${candidate.reason}",
-                priceRiskPercent,
-            )
+            return noTrade(series, latest.sourceTimestamp, "No valid 1-2% structural stop is available", priceRiskPercent)
         }
 
-        val sizing = PositionRiskCalculator.calculate(
-            accountEquity = accountEquity,
-            riskPercent = accountRiskPercent,
-            entryPrice = entry,
-            stopLossPrice = stop,
-        )
+        val sizing = PositionRiskCalculator.calculate(accountEquity, accountRiskPercent, entry, stop)
         if (sizing.status != PositionRiskStatus.READY) {
-            return noTrade(series, latest.sourceTimestamp, sizing.message, priceRiskPercent)
+            return noTrade(series, latest.sourceTimestamp, "Risk validation rejected this setup", priceRiskPercent)
         }
 
-        val stopDistance = abs(entry - stop)
-        val target1 = when (candidate.direction) {
-            CandidateDirection.LONG -> entry + target1R * stopDistance
-            CandidateDirection.SHORT -> entry - target1R * stopDistance
-            CandidateDirection.NONE -> error("NONE candidate passed directional branch")
-        }
-        val target2 = when (candidate.direction) {
-            CandidateDirection.LONG -> entry + target2R * stopDistance
-            CandidateDirection.SHORT -> entry - target2R * stopDistance
-            CandidateDirection.NONE -> error("NONE candidate passed directional branch")
-        }
+        val distance = abs(entry - stop)
+        val target1 = if (candidate.direction == CandidateDirection.LONG) entry + distance else entry - distance
+        val target2 = if (candidate.direction == CandidateDirection.LONG) entry + target2R * distance else entry - target2R * distance
         if (!target1.isFinite() || !target2.isFinite() || target1 <= 0.0 || target2 <= 0.0) {
-            return noTrade(series, latest.sourceTimestamp, "Calculated target is invalid", priceRiskPercent)
+            return noTrade(series, latest.sourceTimestamp, "Calculated exit is invalid", priceRiskPercent)
         }
 
         return InAppSignalResult(
-            direction = when (candidate.direction) {
-                CandidateDirection.LONG -> SignalDirection.LONG
-                CandidateDirection.SHORT -> SignalDirection.SHORT
-                CandidateDirection.NONE -> SignalDirection.NO_TRADE
-            },
+            direction = if (candidate.direction == CandidateDirection.LONG) SignalDirection.LONG else SignalDirection.SHORT,
             symbol = series.symbol,
             timeframe = series.timeframe,
             sourceTimestamp = latest.sourceTimestamp,
@@ -110,12 +77,7 @@ object InAppSignalEngine {
         )
     }
 
-    private fun noTrade(
-        series: ValidatedBarSeries,
-        timestamp: String,
-        reason: String,
-        priceRiskPercent: Double? = null,
-    ) = InAppSignalResult(
+    private fun noTrade(series: ValidatedBarSeries, timestamp: String, reason: String, priceRiskPercent: Double? = null) = InAppSignalResult(
         direction = SignalDirection.NO_TRADE,
         symbol = series.symbol,
         timeframe = series.timeframe,
@@ -134,21 +96,15 @@ object InAppSignalEngine {
 
     fun format(result: InAppSignalResult): String = buildString {
         append("SIGNAL: ").append(result.direction).append('\n')
-        append("Symbol: ").append(result.symbol).append(" | Timeframe: ").append(result.timeframe).append('\n')
-        append("Closed-bar timestamp: ").append(result.sourceTimestamp).append('\n')
         if (result.direction != SignalDirection.NO_TRADE) {
-            append("Entry zone: ₹").append(format(result.entry!!)).append(" (validated closed-bar trigger)\n")
-            append("Stop loss / invalidation: ₹").append(format(result.stopLoss!!))
-                .append(" (").append(format(result.riskPercentOfPrice!!)).append("%)\n")
-            append("Target 1 (1R): ₹").append(format(result.target1!!)).append('\n')
-            append("Target 2 (2R): ₹").append(format(result.target2!!)).append('\n')
-            append("Exit guidance: take risk off at Target 1; final planned exit at Target 2 or structural stop, whichever occurs first.\n")
-            append("Reward/Risk to Target 2: 1:").append(format(result.rewardToRisk!!)).append('\n')
-            append("Max quantity: ").append(result.quantity).append('\n')
-            append("Estimated account risk: ₹").append(format(result.estimatedAccountRisk)).append('\n')
+            append("ENTRY: ₹").append(format(result.entry!!)).append('\n')
+            append("STOP LOSS: ₹").append(format(result.stopLoss!!)).append('\n')
+            append("EXIT 1: ₹").append(format(result.target1!!)).append('\n')
+            append("EXIT 2: ₹").append(format(result.target2!!)).append('\n')
+        } else {
+            append("NO TRADE\n")
+            append("Reason: ").append(result.reason)
         }
-        append("Reason: ").append(result.reason).append('\n')
-        append("Data: ").append(result.provenance)
     }
 
     private fun format(value: Double): String = String.format(Locale.US, "%.2f", value)
