@@ -19,6 +19,7 @@ object TradingViewWebSocketHtml {
 
         val target = limit + 2
         val range = limit + 3
+        val pricesKey = "${'$'}prices"
         return """
             <!doctype html>
             <html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -95,7 +96,7 @@ object TradingViewWebSocketHtml {
                   }
                   if (packet.m !== 'timescale_update' && packet.m !== 'du') continue;
                   const update = packet.p[1];
-                  const priceSet = update && update['$prices'];
+                  const priceSet = update && update['$pricesKey'];
                   const series = priceSet && priceSet.s;
                   if (!Array.isArray(series)) continue;
                   for (const point of series) {
@@ -119,7 +120,7 @@ object TradingViewWebSocketHtml {
                 send('set_auth_token', ['unauthorized_user_token']);
                 send('chart_create_session', [session]);
                 send('resolve_symbol', [session, 'ser_1', '=' + JSON.stringify({symbol: SYMBOL, adjustment: 'splits'})]);
-                send('create_series', [session, '$prices', 's1', 'ser_1', TIMEFRAME, RANGE]);
+                send('create_series', [session, '$pricesKey', 's1', 'ser_1', TIMEFRAME, RANGE]);
               };
               ws.onmessage = (event) => parse(event.data);
               ws.onerror = () => fail('TradingView websocket error');
