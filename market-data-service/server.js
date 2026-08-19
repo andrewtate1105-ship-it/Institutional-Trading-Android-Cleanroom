@@ -46,7 +46,7 @@ function toCsv(periods) {
   const chronological = [...periods].sort((a, b) => a.time - b.time);
   if (chronological.length < 3) throw new Error('Insufficient closed-bar history');
 
-  // chart.periods is newest-first. Drop the newest bar because it may still be forming.
+  // Drop the newest bar because it may still be forming.
   const closed = chronological.slice(0, -1);
   if (closed.length < 2) throw new Error('Insufficient closed-bar history');
 
@@ -68,6 +68,8 @@ function fetchClosedBars(symbol, timeframe, limit) {
   return new Promise((resolve, reject) => {
     const client = new TradingView.Client();
     const chart = new client.Session.Chart();
+    const requested = Math.min(limit + 2, MAX_LIMIT + 2);
+    const range = Math.min(limit + 3, MAX_LIMIT + 3);
     let settled = false;
 
     const finish = (error, value) => {
@@ -79,17 +81,17 @@ function fetchClosedBars(symbol, timeframe, limit) {
       if (error) reject(error); else resolve(value);
     };
 
-    const timer = setTimeout(() => finish(new Error('TradingView request timed out')), TIMEOUT_MS);
+    const timer = setTimeout(() => finish(new Error('TradingView request timed out before full history loaded')), TIMEOUT_MS);
     chart.onError((...args) => finish(new Error(args.map(String).join(' '))));
     chart.onUpdate(() => {
       try {
-        if (chart.periods.length < 3) return;
-        const requested = Math.min(limit + 2, MAX_LIMIT + 2);
+        if (chart.periods.length < requested) return;
         const periods = chart.periods.slice(0, requested);
         const csv = toCsv(periods);
         const lines = csv.trimEnd().split('\n');
         const header = lines[0];
         const data = lines.slice(1).slice(-limit);
+        if (data.length < limit) throw new Error('TradingView returned incomplete closed-bar history');
         finish(null, `${header}\n${data.join('\n')}\n`);
       } catch (error) {
         finish(error);
@@ -98,7 +100,7 @@ function fetchClosedBars(symbol, timeframe, limit) {
 
     chart.setMarket(`NSE:${symbol}`, {
       timeframe: TIMEFRAMES[timeframe],
-      range: Math.min(limit + 3, MAX_LIMIT + 3),
+      range,
     });
   });
 }
