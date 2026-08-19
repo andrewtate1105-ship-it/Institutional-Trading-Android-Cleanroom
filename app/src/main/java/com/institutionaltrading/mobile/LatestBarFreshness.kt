@@ -7,8 +7,8 @@ import java.time.Instant
  * Freshness guard for user-facing signal analysis.
  *
  * Historical bars may span long periods, so only the latest closed bar is checked
- * for recency. This prevents a valid historical CSV from being mistaken for a
- * current trading signal while preserving older bars needed for structure.
+ * for recency. Intraday windows are intentionally tight enough to reject a
+ * typical 15-minute delayed quote feed instead of presenting it as a live setup.
  */
 object LatestBarFreshness {
     fun requireCurrent(series: ValidatedBarSeries, now: Instant): ValidatedBarSeries {
@@ -29,16 +29,16 @@ object LatestBarFreshness {
         val maxAge = maxAgeFor(series.timeframe)
         if (age > maxAge) {
             throw MarketDataUnavailableException(
-                "Latest closed bar is stale for ${series.timeframe} analysis (${age.toMinutes()} minutes old; maximum ${maxAge.toMinutes()} minutes). Load current machine-readable closed-bar data."
+                "Latest closed bar is stale for ${series.timeframe} analysis (${age.toMinutes()} minutes old; maximum ${maxAge.toMinutes()} minutes). A delayed feed is not accepted for a current signal."
             )
         }
         return series
     }
 
     fun maxAgeFor(timeframe: String): Duration = when (timeframe) {
-        "5M" -> Duration.ofMinutes(15)
-        "15M" -> Duration.ofMinutes(45)
-        "1H" -> Duration.ofHours(3)
+        "5M" -> Duration.ofMinutes(10)
+        "15M" -> Duration.ofMinutes(25)
+        "1H" -> Duration.ofMinutes(70)
         "D" -> Duration.ofDays(3)
         "W" -> Duration.ofDays(14)
         else -> throw IllegalArgumentException("Unsupported timeframe")
