@@ -82,7 +82,8 @@ object TradingViewWebSocketHtml {
                       high: bar.high,
                       low: bar.low,
                       close: bar.close,
-                      previousClose: previous.close
+                      previousClose: previous.close,
+                      volume: Number.isFinite(bar.volume) && bar.volume >= 0 ? bar.volume : null
                     });
                   }
                   done = true;
@@ -123,12 +124,14 @@ object TradingViewWebSocketHtml {
                   for (const point of series) {
                     const values = point && point.v;
                     if (!Array.isArray(values) || values.length < 6) continue;
+                    const volume = values.length > 5 ? Number(values[5]) : NaN;
                     periods.set(values[0], {
                       time: Number(values[0]),
                       open: Number(values[1]),
                       high: Number(values[2]),
                       low: Number(values[3]),
-                      close: Number(values[4])
+                      close: Number(values[4]),
+                      volume: Number.isFinite(volume) && volume >= 0 ? volume : null
                     });
                   }
                   finish();
