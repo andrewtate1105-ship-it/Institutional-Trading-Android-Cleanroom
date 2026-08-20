@@ -53,7 +53,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(6))
         })
         root.addView(label(
-            "Closed-bar market structure + EMA 20/50/200 + RSI + ATR + momentum + breakout confirmation. Weak setups are rejected.",
+            "Closed-bar market structure + EMA 20/50/200 + RSI + ATR + momentum + breakout confirmation + higher-timeframe bias. Weak setups are rejected.",
             14f,
             TEXT_SECONDARY,
         ))
@@ -126,7 +126,7 @@ class MainActivity : Activity() {
         root.addView(resultCard, cardParams())
 
         root.addView(label(
-            "Risk gate: structural stop must be 1–2% from entry. Stale, forming, future-dated, delayed, invalid or low-confluence data fails closed. F&O never fabricates strike, premium, OI, IV or Greeks.",
+            "Risk gate: structural stop must be 1–2% from entry, final 3R must have clear prior structural room, and the execution setup must align with higher-timeframe institutional bias. Stale, forming, future-dated, delayed, invalid or low-confluence data fails closed. F&O never fabricates strike, premium, OI, IV or Greeks.",
             12f,
             TEXT_MUTED,
         ).apply { setPadding(dp(2), dp(4), dp(2), 0) })
@@ -142,7 +142,7 @@ class MainActivity : Activity() {
         }
         val selectedMode = tradingMode
         if (!TradingModePolicy.canAnalyze(selectedMode, liveDataSource.capabilities)) {
-            dataStatus.text = "Market data: F&O CONTRACT FEED UNAVAILABLE"
+            dataStatus.text = "Market data: VERIFIED CLOSED BARS UNAVAILABLE"
             resultView.text = buildString {
                 append("SIGNAL: NO_TRADE\nNO TRADE\nReason: ")
                 append(TradingModePolicy.resultNotice(selectedMode, liveDataSource.capabilities))
@@ -171,10 +171,44 @@ class MainActivity : Activity() {
                             dataStatus.text = "Market data: UNAVAILABLE — ${error.message ?: "feed failed"}"
                             resultView.text = AnalysisFailurePresentation.format(error)
                         }.onSuccess { rows ->
-                            analyzeInBackground(identity, rows, timeframe, selectedMode, button)
+                            fetchHigherTimeframeAndAnalyze(
+                                identity = identity,
+                                rows = rows,
+                                timeframe = timeframe,
+                                mode = selectedMode,
+                                button = button,
+                            )
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private fun fetchHigherTimeframeAndAnalyze(
+        identity: InstrumentIdentity,
+        rows: List<BacktestRow>,
+        timeframe: String,
+        mode: TradingMode,
+        button: Button,
+    ) {
+        val higherTimeframe = MultiTimeframeConfirmation.confirmationTimeframe(timeframe)
+        if (higherTimeframe == null) {
+            analyzeInBackground(identity, rows, timeframe, mode, button, null, null)
+            return
+        }
+
+        dataStatus.text = "Loading $timeframe setup + $higherTimeframe institutional context…"
+        liveDataSource.fetch(identity.symbol, higherTimeframe, 200) { higherResult ->
+            higherResult.onFailure { error ->
+                button.isEnabled = true
+                dataStatus.text = "Market data: HIGHER-TIMEFRAME CONTEXT UNAVAILABLE"
+                resultView.text = buildString {
+                    append("SIGNAL: NO_TRADE\nNO TRADE\nReason: Higher-timeframe confirmation failed closed — ")
+                    append(error.message ?: "feed failed")
+                }
+            }.onSuccess { higherRows ->
+                analyzeInBackground(identity, rows, timeframe, mode, button, higherTimeframe, higherRows)
             }
         }
     }
@@ -185,6 +219,8 @@ class MainActivity : Activity() {
         timeframe: String,
         mode: TradingMode,
         button: Button,
+        higherTimeframe: String?,
+        higherRows: List<BacktestRow>?,
     ) {
         ioExecutor.execute {
             val result = runCatching {
@@ -200,10 +236,50 @@ class MainActivity : Activity() {
                     accountEquity = DEFAULT_ACCOUNT_EQUITY,
                     accountRiskPercent = DEFAULT_ACCOUNT_RISK_PERCENT,
                 )
+
+                val higherContext = if (signal.direction != SignalDirection.NO_TRADE && higherTimeframe != null) {
+                    val confirmedRows = requireNotNull(higherRows) { "Higher-timeframe bars are missing" }
+                    val higherSeries = HistoricalBarAdapter.toValidatedSeries(
+                        rows = confirmedRows,
+                        symbol = identity.symbol,
+                        timeframe = higherTimeframe,
+                        provenance = "TRADINGVIEW_DIRECT_WEBSOCKET",
+                    )
+                    LatestBarFreshness.requireCurrent(higherSeries, Instant.now())
+                    InstitutionalSignalAnalysis.assess(higherSeries)
+                } else {
+                    null
+                }
+
+                val formattedSignal = if (
+                    signal.direction != SignalDirection.NO_TRADE &&
+                    higherTimeframe != null &&
+                    higherContext != null &&
+                    !MultiTimeframeConfirmation.isAligned(signal.direction, higherContext)
+                ) {
+                    buildString {
+                        append("SIGNAL: NO_TRADE\nNO TRADE\nReason: ")
+                        append(MultiTimeframeConfirmation.mismatchReason(timeframe, higherTimeframe))
+                        append(". Higher-timeframe score ")
+                        append(higherContext.score)
+                        append("/")
+                        append(InstitutionalSignalAnalysis.maximumDirectionalScore)
+                        append("; ")
+                        append(higherContext.reason)
+                    }
+                } else {
+                    InAppSignalEngine.format(signal)
+                }
+
                 buildString {
-                    append(InAppSignalEngine.format(signal))
+                    append(formattedSignal)
                     append("\n\nMODE: ").append(mode.label)
                     append("\n").append(TradingModePolicy.resultNotice(mode, liveDataSource.capabilities))
+                    if (higherTimeframe != null) {
+                        append("\nMTF: ").append(timeframe).append(" confirmed against ").append(higherTimeframe)
+                    } else {
+                        append("\nMTF: Weekly terminal context")
+                    }
                 }
             }
             runOnUiThread {
