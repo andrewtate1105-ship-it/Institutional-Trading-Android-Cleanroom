@@ -6,6 +6,8 @@ import java.time.Instant
 /**
  * A single source bar. Timestamps must describe the completed source bar in canonical UTC.
  * No signal may be produced from a bar unless [isClosed] is true and validation succeeds.
+ * [volume] is optional because some development feeds expose only OHLC. Production providers
+ * may supply verified exchange volume; unavailable volume must remain null rather than inferred.
  */
 data class MarketBar(
     val symbol: String,
@@ -18,6 +20,7 @@ data class MarketBar(
     val close: Double,
     val isClosed: Boolean,
     val provenance: String,
+    val volume: Double? = null,
 )
 
 data class ValidatedBarSeries(
@@ -46,6 +49,9 @@ object MarketDataQuality {
         require(prices.all { it.isFinite() && it > 0.0 }) { "OHLC prices must be finite and positive" }
         require(bar.high >= maxOf(bar.open, bar.close, bar.low)) { "High is inconsistent with OHLC values" }
         require(bar.low <= minOf(bar.open, bar.close, bar.high)) { "Low is inconsistent with OHLC values" }
+        bar.volume?.let { volume ->
+            require(volume.isFinite() && volume >= 0.0) { "Volume must be finite and non-negative when supplied" }
+        }
 
         return bar.copy(symbol = symbol)
     }
