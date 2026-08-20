@@ -12,6 +12,20 @@ class TradingViewChartHtmlTest {
         assertTrue(html.contains("embed-widget-advanced-chart.js"))
     }
 
+    @Test fun mapsEverySupportedTimeframeDeterministically() {
+        val mappings = mapOf(
+            "5M" to "5",
+            "15M" to "15",
+            "1H" to "60",
+            "D" to "D",
+            "W" to "W",
+        )
+        mappings.forEach { (timeframe, expectedInterval) ->
+            val html = TradingViewChartHtml.render("RELIANCE", timeframe)
+            assertTrue("Expected $timeframe -> $expectedInterval", html.contains("\"interval\": \"$expectedInterval\""))
+        }
+    }
+
     @Test fun rejectsInvalidSymbolAndTimeframe() {
         assertTrue(runCatching { TradingViewChartHtml.render("<script>", "15M") }.isFailure)
         assertTrue(runCatching { TradingViewChartHtml.render("ASHOKLEY", "2M") }.isFailure)
