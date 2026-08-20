@@ -14,10 +14,11 @@ data class BacktestRow(
     val low: Double,
     val close: Double,
     val previousClose: Double,
+    val volume: Double? = null,
 )
 
 object BacktestCsvImporter {
-    private enum class Field { TIMESTAMP, OPEN, HIGH, LOW, CLOSE, PREVIOUS_CLOSE }
+    private enum class Field { TIMESTAMP, OPEN, HIGH, LOW, CLOSE, PREVIOUS_CLOSE, VOLUME }
 
     private val aliases = mapOf(
         "date" to Field.TIMESTAMP,
@@ -31,6 +32,8 @@ object BacktestCsvImporter {
         "previousclose" to Field.PREVIOUS_CLOSE,
         "prevclose" to Field.PREVIOUS_CLOSE,
         "previousclosingprice" to Field.PREVIOUS_CLOSE,
+        "volume" to Field.VOLUME,
+        "vol" to Field.VOLUME,
     )
 
     fun parse(csv: String): List<BacktestRow> {
@@ -40,17 +43,22 @@ object BacktestCsvImporter {
         val headers = parseLine(lines.first())
         require(headers.isNotEmpty()) { "CSV header is empty" }
         val mapped = headers.map { header -> aliases[normalizeHeader(header)] }
-        val required = Field.entries.toSet()
-        require(mapped.filterNotNull().toSet() == required) { "CSV is missing one or more required columns" }
-        require(mapped.filterNotNull().size == required.size) { "CSV contains ambiguous duplicate required columns" }
+        val required = setOf(Field.TIMESTAMP, Field.OPEN, Field.HIGH, Field.LOW, Field.CLOSE, Field.PREVIOUS_CLOSE)
+        require(mapped.filterNotNull().toSet().containsAll(required)) { "CSV is missing one or more required columns" }
+        required.forEach { field ->
+            require(mapped.count { it == field } == 1) { "CSV contains ambiguous duplicate required columns" }
+        }
+        require(mapped.count { it == Field.VOLUME } <= 1) { "CSV contains ambiguous duplicate volume columns" }
 
         val indexes = required.associateWith { field -> mapped.indexOf(field) }
+        val volumeIndex = mapped.indexOf(Field.VOLUME).takeIf { it >= 0 }
         val rows = lines.drop(1).mapIndexed { offset, line ->
             val rowNumber = offset + 2
             val cells = parseLine(line)
             require(cells.size == headers.size) { "CSV row $rowNumber has ${cells.size} columns; expected ${headers.size}" }
             fun value(field: Field): String = cells[indexes.getValue(field)].trim()
             val timestamp = parseTimestamp(value(Field.TIMESTAMP), rowNumber)
+            val volume = volumeIndex?.let { index -> parseOptionalVolume(cells[index].trim(), rowNumber) }
             val row = BacktestRow(
                 timestamp = timestamp,
                 open = parseNumber(value(Field.OPEN), "Open", rowNumber),
@@ -58,6 +66,7 @@ object BacktestCsvImporter {
                 low = parseNumber(value(Field.LOW), "Low", rowNumber),
                 close = parseNumber(value(Field.CLOSE), "Close", rowNumber),
                 previousClose = parseNumber(value(Field.PREVIOUS_CLOSE), "Previous Close", rowNumber),
+                volume = volume,
             )
             validateOhlc(row, rowNumber)
             row
@@ -82,10 +91,6 @@ object BacktestCsvImporter {
 
     private fun parseTimestamp(value: String, rowNumber: Int): String {
         require(value.isNotBlank()) { "Timestamp is empty at row $rowNumber" }
-
-        // TradingView/JavaScript emits canonical UTC instants such as
-        // 2026-08-19T09:15:00.000Z. Instant.toString() normalizes that to
-        // 2026-08-19T09:15:00Z, so string equality is not a valid canonicality test.
         runCatching { Instant.parse(value) }.getOrNull()?.let { instant ->
             val canonicalMillis = DateTimeFormatter.ISO_INSTANT.format(instant)
             require(value.endsWith("Z")) { "Timestamp must be UTC at row $rowNumber" }
@@ -102,6 +107,14 @@ object BacktestCsvImporter {
         val number = value.toDoubleOrNull()
             ?: throw IllegalArgumentException("$label is not numeric at row $rowNumber")
         require(number.isFinite() && number > 0.0) { "$label must be finite and positive at row $rowNumber" }
+        return number
+    }
+
+    private fun parseOptionalVolume(value: String, rowNumber: Int): Double? {
+        if (value.isBlank()) return null
+        val number = value.toDoubleOrNull()
+            ?: throw IllegalArgumentException("Volume is not numeric at row $rowNumber")
+        require(number.isFinite() && number >= 0.0) { "Volume must be finite and non-negative at row $rowNumber" }
         return number
     }
 
