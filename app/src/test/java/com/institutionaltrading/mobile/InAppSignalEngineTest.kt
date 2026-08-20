@@ -27,7 +27,14 @@ class InAppSignalEngineTest {
         assertEquals(SignalDirection.NO_TRADE, result.direction)
         assertEquals(0L, result.quantity)
         assertTrue(result.entry == null)
+        assertTrue(result.reason.contains("Insufficient closed-bar history"))
         assertTrue(InAppSignalEngine.format(result).startsWith("SIGNAL: NO_TRADE"))
+    }
+
+    @Test fun exactlyTwoHundredClosedBarsPassHistoryGate() {
+        val series = ValidatedBarSeries("RELIANCE", "15M", (0 until 200).map(::bar))
+        val result = InAppSignalEngine.analyze(series, 100000.0, 1.0)
+        assertTrue(!result.reason.contains("Insufficient closed-bar history"))
     }
 
     @Test fun formingBarIsRejected() {
