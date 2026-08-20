@@ -5,7 +5,7 @@ import kotlin.math.max
 
 /**
  * Deterministic closed-bar confluence model. It intentionally does not infer unavailable
- * derivatives fields (OI/IV/Greeks) and never consumes a forming candle.
+ * derivatives fields (OI/IV/Greeks), does not invent volume, and never consumes a forming candle.
  */
 enum class InstitutionalBias { BULLISH, BEARISH, NEUTRAL }
 
@@ -20,12 +20,15 @@ data class InstitutionalAssessment(
     val support: Double,
     val resistance: Double,
     val momentumPercent: Double,
+    val vwap: Double?,
+    val latestVolumeRatio: Double?,
     val reason: String,
 )
 
 object InstitutionalSignalAnalysis {
     const val minimumBars = 200
     const val minimumDirectionalScore = 6
+    const val maximumDirectionalScore = 9
 
     fun assess(series: ValidatedBarSeries): InstitutionalAssessment {
         require(series.bars.size >= minimumBars) { "At least 200 closed bars are required for institutional analysis" }
@@ -44,6 +47,8 @@ object InstitutionalSignalAnalysis {
         val resistance = structureWindow.maxOf { it.high }
         val priorMomentumClose = closes[closes.lastIndex - 5]
         val momentum = (latest.close / priorMomentumClose - 1.0) * 100.0
+        val vwap = vwapOrNull(bars)
+        val latestVolumeRatio = latestVolumeRatioOrNull(bars)
 
         var bullish = 0
         var bearish = 0
@@ -95,6 +100,36 @@ object InstitutionalSignalAnalysis {
             if (bearish > bullish) bearish += 1
         }
 
+        if (vwap != null && latestVolumeRatio != null) {
+            when {
+                latestVolumeRatio < 0.50 -> {
+                    return InstitutionalAssessment(
+                        bias = InstitutionalBias.NEUTRAL,
+                        score = max(bullish, bearish),
+                        ema20 = ema20,
+                        ema50 = ema50,
+                        ema200 = ema200,
+                        rsi14 = rsi,
+                        atr14 = atr,
+                        support = support,
+                        resistance = resistance,
+                        momentumPercent = momentum,
+                        vwap = vwap,
+                        latestVolumeRatio = latestVolumeRatio,
+                        reason = "Liquidity filter rejected setup: latest volume below 50% of 20-bar average",
+                    )
+                }
+                latest.close > vwap && latestVolumeRatio >= 0.80 -> {
+                    bullish += 1
+                    bullReasons += "price above verified-volume VWAP with acceptable participation"
+                }
+                latest.close < vwap && latestVolumeRatio >= 0.80 -> {
+                    bearish += 1
+                    bearReasons += "price below verified-volume VWAP with acceptable participation"
+                }
+            }
+        }
+
         val bias = when {
             bullish >= minimumDirectionalScore && bullish >= bearish + 2 -> InstitutionalBias.BULLISH
             bearish >= minimumDirectionalScore && bearish >= bullish + 2 -> InstitutionalBias.BEARISH
@@ -118,6 +153,8 @@ object InstitutionalSignalAnalysis {
             support = support,
             resistance = resistance,
             momentumPercent = momentum,
+            vwap = vwap,
+            latestVolumeRatio = latestVolumeRatio,
             reason = reason,
         )
     }
@@ -168,5 +205,25 @@ object InstitutionalSignalAnalysis {
             value = (value * (period - 1) + ranges[index]) / period
         }
         return value
+    }
+
+    internal fun vwapOrNull(bars: List<MarketBar>): Double? {
+        if (bars.isEmpty() || bars.any { it.volume == null }) return null
+        var weighted = 0.0
+        var volume = 0.0
+        for (bar in bars) {
+            val barVolume = bar.volume ?: return null
+            weighted += ((bar.high + bar.low + bar.close) / 3.0) * barVolume
+            volume += barVolume
+        }
+        return if (volume > 0.0) weighted / volume else null
+    }
+
+    internal fun latestVolumeRatioOrNull(bars: List<MarketBar>): Double? {
+        if (bars.size < 21 || bars.takeLast(21).any { it.volume == null }) return null
+        val prior = bars.dropLast(1).takeLast(20).map { it.volume!! }
+        val average = prior.average()
+        if (average <= 0.0) return null
+        return bars.last().volume!! / average
     }
 }
