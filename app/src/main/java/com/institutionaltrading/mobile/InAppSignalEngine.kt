@@ -85,7 +85,7 @@ object InAppSignalEngine {
             riskPercentOfPrice = priceRiskPercent,
             quantity = sizing.quantity,
             estimatedAccountRisk = sizing.estimatedPositionRisk,
-            reason = "${candidate.reason}; score ${assessment.score}/8; ${assessment.reason}",
+            reason = "${candidate.reason}; score ${assessment.score}/${InstitutionalSignalAnalysis.maximumDirectionalScore}; ${assessment.reason}",
             provenance = latest.provenance,
         )
     }
