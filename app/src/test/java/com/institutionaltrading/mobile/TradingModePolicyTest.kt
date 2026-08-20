@@ -19,18 +19,26 @@ class TradingModePolicyTest {
         assertTrue(TradingModePolicy.resultNotice(TradingMode.STOCKS, underlyingOnly).contains("equity"))
     }
 
-    @Test fun fnoModeFailsClosedWithoutDerivativeContracts() {
-        assertFalse(TradingModePolicy.canAnalyze(TradingMode.F_AND_O, underlyingOnly))
+    @Test fun fnoModeAllowsUnderlyingDirectionalAnalysisWithoutFabricatingContracts() {
+        assertTrue(TradingModePolicy.canAnalyze(TradingMode.F_AND_O, underlyingOnly))
+        assertFalse(TradingModePolicy.hasVerifiedDerivativeContracts(underlyingOnly))
         val notice = TradingModePolicy.resultNotice(TradingMode.F_AND_O, underlyingOnly)
-        assertTrue(notice.startsWith("NO TRADE"))
-        assertTrue(notice.contains("not fabricated"))
+        assertTrue(notice.contains("verified underlying"))
+        assertTrue(notice.contains("No contract"))
         assertTrue(notice.contains("OI"))
         assertTrue(notice.contains("Greeks"))
     }
 
-    @Test fun fnoModeCanAnalyzeWhenVerifiedContractsExist() {
+    @Test fun fnoModeCanUseVerifiedContractsWhenProviderSupportsThem() {
         val derivatives = underlyingOnly.copy(derivativesContracts = true)
         assertTrue(TradingModePolicy.canAnalyze(TradingMode.F_AND_O, derivatives))
+        assertTrue(TradingModePolicy.hasVerifiedDerivativeContracts(derivatives))
         assertTrue(TradingModePolicy.resultNotice(TradingMode.F_AND_O, derivatives).contains("available"))
+    }
+
+    @Test fun bothModesFailClosedWithoutClosedBars() {
+        val unavailable = underlyingOnly.copy(closedOhlcBars = false)
+        assertFalse(TradingModePolicy.canAnalyze(TradingMode.STOCKS, unavailable))
+        assertFalse(TradingModePolicy.canAnalyze(TradingMode.F_AND_O, unavailable))
     }
 }
