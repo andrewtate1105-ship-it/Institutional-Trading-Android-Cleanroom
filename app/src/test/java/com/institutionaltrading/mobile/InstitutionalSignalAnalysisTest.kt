@@ -48,6 +48,34 @@ class InstitutionalSignalAnalysisTest {
         assertTrue(assessment.ema50 < assessment.ema200)
     }
 
+    @Test fun bullishBreakoutRetestAddsExplicitConfluence() {
+        val base = series(0.20)
+        val resistance = base.bars.dropLast(1).takeLast(20).maxOf { it.high }
+        val latest = base.bars.last()
+        val retest = latest.copy(
+            low = resistance - 0.05,
+            high = maxOf(latest.high, latest.close + 0.1),
+        )
+        val assessment = InstitutionalSignalAnalysis.assess(base.copy(bars = base.bars.dropLast(1) + retest))
+        assertEquals(InstitutionalBias.BULLISH, assessment.bias)
+        assertTrue(assessment.reason.contains("breakout retest held"))
+        assertTrue(assessment.score <= InstitutionalSignalAnalysis.maximumDirectionalScore)
+    }
+
+    @Test fun bearishBreakdownRetestAddsExplicitConfluence() {
+        val base = series(-0.20)
+        val support = base.bars.dropLast(1).takeLast(20).minOf { it.low }
+        val latest = base.bars.last()
+        val retest = latest.copy(
+            high = support + 0.05,
+            low = minOf(latest.low, latest.close - 0.1),
+        )
+        val assessment = InstitutionalSignalAnalysis.assess(base.copy(bars = base.bars.dropLast(1) + retest))
+        assertEquals(InstitutionalBias.BEARISH, assessment.bias)
+        assertTrue(assessment.reason.contains("breakdown retest rejected"))
+        assertTrue(assessment.score <= InstitutionalSignalAnalysis.maximumDirectionalScore)
+    }
+
     @Test fun verifiedVolumeEnablesVwapAndParticipationScore() {
         val assessment = InstitutionalSignalAnalysis.assess(series(0.20) { 1000.0 })
         assertTrue(assessment.vwap != null)

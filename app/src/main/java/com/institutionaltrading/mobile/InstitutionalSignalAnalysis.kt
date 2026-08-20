@@ -28,7 +28,7 @@ data class InstitutionalAssessment(
 object InstitutionalSignalAnalysis {
     const val minimumBars = 200
     const val minimumDirectionalScore = 6
-    const val maximumDirectionalScore = 9
+    const val maximumDirectionalScore = 10
 
     fun assess(series: ValidatedBarSeries): InstitutionalAssessment {
         require(series.bars.size >= minimumBars) { "At least 200 closed bars are required for institutional analysis" }
@@ -85,13 +85,24 @@ object InstitutionalSignalAnalysis {
             bearish += 1
             bearReasons += "five-bar momentum negative"
         }
-        if (latest.close > resistance) {
+
+        val bullishBreakout = latest.close > resistance
+        val bearishBreakdown = latest.close < support
+        if (bullishBreakout) {
             bullish += 2
             bullReasons += "closed-bar resistance breakout"
+            if (latest.low <= resistance) {
+                bullish += 1
+                bullReasons += "breakout retest held above prior resistance"
+            }
         }
-        if (latest.close < support) {
+        if (bearishBreakdown) {
             bearish += 2
             bearReasons += "closed-bar support breakdown"
+            if (latest.high >= support) {
+                bearish += 1
+                bearReasons += "breakdown retest rejected below prior support"
+            }
         }
 
         val atrPercent = atr / latest.close * 100.0
