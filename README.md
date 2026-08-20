@@ -1,6 +1,6 @@
 # Institutional Trading System — Android Cleanroom
 
-Signal-only Android application for Indian equities and F&O analysis. The app accepts a stock/index name or NSE symbol plus timeframe and returns deterministic closed-bar analysis in-app.
+Signal-only Android application for Indian equities and F&O analysis. The app accepts a stock/index name or NSE symbol plus timeframe and returns deterministic closed-bar analysis in-app. It never asks the operator for a TradingView chart URL or CSV file; symbol resolution, market-data intake, chart loading, and signal presentation happen inside the app.
 
 Security and scope:
 - No Telegram integration exists.
