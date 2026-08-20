@@ -29,12 +29,17 @@ enum class TradingMode(val label: String) {
 }
 
 object TradingModePolicy {
+    fun canAnalyze(mode: TradingMode, capabilities: MarketDataCapabilities): Boolean = when (mode) {
+        TradingMode.STOCKS -> capabilities.closedOhlcBars
+        TradingMode.F_AND_O -> capabilities.closedOhlcBars && capabilities.derivativesContracts
+    }
+
     fun resultNotice(mode: TradingMode, capabilities: MarketDataCapabilities): String = when (mode) {
         TradingMode.STOCKS -> "Underlying equity signal."
-        TradingMode.F_AND_O -> if (capabilities.derivativesContracts) {
-            "Derivative contract data available."
+        TradingMode.F_AND_O -> if (canAnalyze(mode, capabilities)) {
+            "Derivative contract data available. Contract selection must use provider-supplied values only."
         } else {
-            "F&O directional signal is based on the underlying only. Contract strike, premium, OI, IV and Greeks are not fabricated."
+            "NO TRADE: this feed has no verified F&O contract data. Strike, premium, OI, IV and Greeks are not fabricated."
         }
     }
 }
