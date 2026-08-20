@@ -108,7 +108,7 @@ class TradingViewWebSocketDataSource(
         require(array.length() == expectedLimit) { "TradingView returned incomplete bar history" }
 
         val csv = buildString {
-            appendLine("Timestamp,Open,High,Low,Close,Previous Close")
+            appendLine("Timestamp,Open,High,Low,Close,Previous Close,Volume")
             for (index in 0 until array.length()) {
                 val row = array.getJSONObject(index)
                 append(row.getString("timestamp")).append(',')
@@ -116,7 +116,10 @@ class TradingViewWebSocketDataSource(
                 append(row.getDouble("high")).append(',')
                 append(row.getDouble("low")).append(',')
                 append(row.getDouble("close")).append(',')
-                append(row.getDouble("previousClose")).append('\n')
+                append(row.getDouble("previousClose")).append(',')
+                val volume = row.opt("volume")
+                if (volume is Number) append(volume.toDouble())
+                append('\n')
             }
         }
         return BacktestCsvImporter.parse(csv).also {
