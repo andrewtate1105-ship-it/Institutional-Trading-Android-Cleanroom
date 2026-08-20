@@ -1,6 +1,7 @@
 package com.institutionaltrading.mobile
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,6 +17,7 @@ class BacktestCsvImporterTest {
         assertEquals(2, rows.size)
         assertEquals("2026-01-01T00:00:00Z", rows.first().timestamp)
         assertEquals(103.0, rows.last().close, 0.0)
+        assertNull(rows.first().volume)
     }
 
     @Test fun acceptsCanonicalUtcTimestampsAndQuotedHeaders() {
@@ -25,6 +27,24 @@ class BacktestCsvImporterTest {
             "2026-01-01T09:20:00Z",101,103,100,102,101
         """.trimIndent()
         assertEquals(2, BacktestCsvImporter.parse(csv).size)
+    }
+
+    @Test fun preservesOptionalVerifiedVolume() {
+        val csv = """
+            Timestamp,Open,High,Low,Close,Previous Close,Volume
+            2026-01-01T09:15:00Z,100,102,99,101,98,125000
+            2026-01-01T09:20:00Z,101,103,100,102,101,150000
+        """.trimIndent()
+        val rows = BacktestCsvImporter.parse(csv)
+        assertEquals(125000.0, rows.first().volume!!, 0.0)
+        assertEquals(150000.0, rows.last().volume!!, 0.0)
+    }
+
+    @Test fun rejectsInvalidOptionalVolume() {
+        val negative = "Timestamp,Open,High,Low,Close,Previous Close,Volume\n2026-01-01T09:15:00Z,100,102,99,101,98,-1"
+        val nonNumeric = "Timestamp,Open,High,Low,Close,Previous Close,Volume\n2026-01-01T09:15:00Z,100,102,99,101,98,bad"
+        assertTrue(runCatching { BacktestCsvImporter.parse(negative) }.isFailure)
+        assertTrue(runCatching { BacktestCsvImporter.parse(nonNumeric) }.isFailure)
     }
 
     @Test fun rejectsMissingOrAmbiguousHeaders() {
