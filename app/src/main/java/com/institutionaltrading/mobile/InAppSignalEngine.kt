@@ -24,8 +24,6 @@ object InAppSignalEngine {
     private const val minAccountRiskPercent = 1.0
     private const val minStopPercent = 1.0
     private const val maxStopPercent = 2.0
-    private const val target1R = 1.5
-    private const val target2R = 3.0
 
     fun analyze(series: ValidatedBarSeries, accountEquity: Double, accountRiskPercent: Double): InAppSignalResult {
         require(series.bars.isNotEmpty()) { "Validated bar series is empty" }
@@ -70,10 +68,7 @@ object InAppSignalEngine {
             return noTrade(series, latest.sourceTimestamp, "Risk validation rejected this setup", priceRiskPercent)
         }
 
-        val distance = abs(entry - stop)
-        val target1 = if (candidate.direction == CandidateDirection.LONG) entry + target1R * distance else entry - target1R * distance
-        val target2 = if (candidate.direction == CandidateDirection.LONG) entry + target2R * distance else entry - target2R * distance
-        if (!target1.isFinite() || !target2.isFinite() || target1 <= 0.0 || target2 <= 0.0) {
+        val targets = runCatching { RiskTargetCalculator.calculate(candidate.direction, entry, stop) }.getOrElse {
             return noTrade(series, latest.sourceTimestamp, "Calculated exit is invalid", priceRiskPercent)
         }
 
@@ -84,9 +79,9 @@ object InAppSignalEngine {
             sourceTimestamp = latest.sourceTimestamp,
             entry = entry,
             stopLoss = stop,
-            target1 = target1,
-            target2 = target2,
-            rewardToRisk = target2R,
+            target1 = targets.target1,
+            target2 = targets.target2,
+            rewardToRisk = targets.finalRewardToRisk,
             riskPercentOfPrice = priceRiskPercent,
             quantity = sizing.quantity,
             estimatedAccountRisk = sizing.estimatedPositionRisk,
