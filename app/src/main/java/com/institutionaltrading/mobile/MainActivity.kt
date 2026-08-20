@@ -140,11 +140,19 @@ class MainActivity : Activity() {
             resultView.text = AnalysisFailurePresentation.format(error)
             return
         }
+        val selectedMode = tradingMode
+        if (!TradingModePolicy.canAnalyze(selectedMode, liveDataSource.capabilities)) {
+            dataStatus.text = "Market data: F&O CONTRACT FEED UNAVAILABLE"
+            resultView.text = buildString {
+                append("SIGNAL: NO_TRADE\nNO TRADE\nReason: ")
+                append(TradingModePolicy.resultNotice(selectedMode, liveDataSource.capabilities))
+            }
+            return
+        }
 
         button.isEnabled = false
         dataStatus.text = "Resolving instrument and loading confirmed bars…"
         resultView.text = "Analyzing market structure and confluence…"
-        val selectedMode = tradingMode
 
         ioExecutor.execute {
             val identityResult = runCatching { TradingViewDirectSymbolResolver.resolve(typedStock) }
