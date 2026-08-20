@@ -29,17 +29,25 @@ enum class TradingMode(val label: String) {
 }
 
 object TradingModePolicy {
+    /**
+     * Both modes may evaluate the verified underlying closed-bar series. F&O mode only becomes
+     * contract-specific when the active provider exposes verified derivative-contract data.
+     * This keeps directional analysis useful without inventing strikes, premiums, OI, IV or Greeks.
+     */
     fun canAnalyze(mode: TradingMode, capabilities: MarketDataCapabilities): Boolean = when (mode) {
         TradingMode.STOCKS -> capabilities.closedOhlcBars
-        TradingMode.F_AND_O -> capabilities.closedOhlcBars && capabilities.derivativesContracts
+        TradingMode.F_AND_O -> capabilities.closedOhlcBars
     }
+
+    fun hasVerifiedDerivativeContracts(capabilities: MarketDataCapabilities): Boolean =
+        capabilities.derivativesContracts
 
     fun resultNotice(mode: TradingMode, capabilities: MarketDataCapabilities): String = when (mode) {
         TradingMode.STOCKS -> "Underlying equity signal."
-        TradingMode.F_AND_O -> if (canAnalyze(mode, capabilities)) {
-            "Derivative contract data available. Contract selection must use provider-supplied values only."
+        TradingMode.F_AND_O -> if (hasVerifiedDerivativeContracts(capabilities)) {
+            "Verified derivative contract data available. Contract selection must use provider-supplied values only."
         } else {
-            "NO TRADE: this feed has no verified F&O contract data. Strike, premium, OI, IV and Greeks are not fabricated."
+            "F&O directional signal is based on the verified underlying only. No contract, strike, premium, OI, IV or Greeks are claimed until a verified derivative feed is connected."
         }
     }
 }
