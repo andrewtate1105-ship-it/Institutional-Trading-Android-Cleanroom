@@ -34,13 +34,17 @@ object InAppSignalEngine {
             "Account risk must be between 1% and 2%"
         }
 
+        val latest = series.bars.last()
+        if (series.bars.size < InstitutionalSignalAnalysis.minimumBars) {
+            return noTrade(series, latest.sourceTimestamp, "Insufficient closed-bar history for EMA200 institutional analysis")
+        }
+
         val assessment = InstitutionalSignalAnalysis.assess(series)
         if (assessment.bias == InstitutionalBias.NEUTRAL) {
-            return noTrade(series, series.bars.last().sourceTimestamp, assessment.reason)
+            return noTrade(series, latest.sourceTimestamp, assessment.reason)
         }
 
         val candidate = TrendFollowingCandidate.evaluate(series)
-        val latest = series.bars.last()
         if (candidate.direction == CandidateDirection.NONE || candidate.entryPrice == null || candidate.structuralStop == null) {
             return noTrade(series, latest.sourceTimestamp, candidate.reason)
         }
