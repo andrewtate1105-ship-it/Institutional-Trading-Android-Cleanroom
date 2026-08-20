@@ -12,7 +12,17 @@ import java.util.UUID
 
 class TradingViewWebSocketDataSource(
     private val activity: Activity,
-) {
+) : ClosedBarMarketDataProvider {
+    override val providerName: String = "TradingView development feed"
+    override val capabilities: MarketDataCapabilities = MarketDataCapabilities(
+        closedOhlcBars = true,
+        volume = false,
+        derivativesContracts = false,
+        openInterest = false,
+        impliedVolatility = false,
+        greeks = false,
+    )
+
     val view: WebView = WebView(activity).apply {
         visibility = View.INVISIBLE
         layoutParams = android.widget.LinearLayout.LayoutParams(1, 1)
@@ -34,10 +44,10 @@ class TradingViewWebSocketDataSource(
         view.addJavascriptInterface(Bridge(), "AndroidBridge")
     }
 
-    fun fetch(
+    override fun fetch(
         symbol: String,
         timeframe: String,
-        limit: Int = 200,
+        limit: Int,
         onComplete: (Result<List<BacktestRow>>) -> Unit,
     ) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "TradingView WebView fetch must start on the main thread" }
@@ -58,7 +68,7 @@ class TradingViewWebSocketDataSource(
         )
     }
 
-    fun destroy() {
+    override fun destroy() {
         check(Looper.myLooper() == Looper.getMainLooper()) { "TradingView WebView destroy must run on the main thread" }
         callback?.invoke(Result.failure(MarketDataUnavailableException("TradingView data source was destroyed")))
         callback = null
