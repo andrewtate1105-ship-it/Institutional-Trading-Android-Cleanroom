@@ -9,7 +9,8 @@ class InstitutionalSignalAnalysisTest {
     private fun series(step: Double): ValidatedBarSeries {
         val origin = Instant.parse("2026-01-01T00:00:00Z")
         val bars = (0 until 205).map { index ->
-            val close = 100.0 + index * step
+            val breakout = if (index == 204) if (step > 0) 2.0 else -2.0 else 0.0
+            val close = 100.0 + index * step + breakout
             MarketBar(
                 symbol = "RELIANCE",
                 timeframe = "15M",
