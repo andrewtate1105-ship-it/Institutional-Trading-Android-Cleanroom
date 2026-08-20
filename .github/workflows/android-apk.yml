@@ -2,7 +2,7 @@ name: Build verified Android APK
 
 on:
   push:
-    branches: [main, agent/once-only-onboarding]
+    branches: [main, agent/once-only-onboarding, agent/institutional-signal-v2]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -138,8 +138,8 @@ jobs:
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Institutional-Trading-System-Android.apk > /tmp/badging.txt
           grep -q "package: name='com.institutionaltrading.mobile'" /tmp/badging.txt
-          grep -q "versionCode='3'" /tmp/badging.txt
-          grep -q "versionName='0.3.0-tradingview'" /tmp/badging.txt
+          grep -q "versionCode='4'" /tmp/badging.txt
+          grep -q "versionName='0.4.0-institutional'" /tmp/badging.txt
           grep -q "sdkVersion:'24'" /tmp/badging.txt
           grep -q "targetSdkVersion:'35'" /tmp/badging.txt
 
