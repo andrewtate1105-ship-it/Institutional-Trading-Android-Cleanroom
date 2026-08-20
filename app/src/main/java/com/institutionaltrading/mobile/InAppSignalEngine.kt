@@ -71,6 +71,20 @@ object InAppSignalEngine {
         val targets = runCatching { RiskTargetCalculator.calculate(candidate.direction, entry, stop) }.getOrElse {
             return noTrade(series, latest.sourceTimestamp, "Calculated exit is invalid", priceRiskPercent)
         }
+        if (!RiskTargetCalculator.hasClearStructuralRoom(
+                direction = candidate.direction,
+                entry = entry,
+                finalTarget = targets.target2,
+                priorBars = series.bars.dropLast(1),
+            )
+        ) {
+            return noTrade(
+                series,
+                latest.sourceTimestamp,
+                "Final 1:3 target is blocked by prior opposing structure",
+                priceRiskPercent,
+            )
+        }
 
         return InAppSignalResult(
             direction = if (candidate.direction == CandidateDirection.LONG) SignalDirection.LONG else SignalDirection.SHORT,
@@ -113,7 +127,7 @@ object InAppSignalEngine {
             append("ENTRY: ₹").append(format(result.entry!!)).append('\n')
             append("STOP LOSS: ₹").append(format(result.stopLoss!!)).append('\n')
             append("EXIT 1 (1.5R): ₹").append(format(result.target1!!)).append('\n')
-            append("EXIT 2 (3R): ₹").append(format(result.target2!!)).append('\n')
+            append("EXIT 2 / FINAL (3R): ₹").append(format(result.target2!!)).append('\n')
             append("R:R: 1:").append(format(result.rewardToRisk!!)).append('\n')
             append("SETUP: ").append(result.reason)
         } else {
