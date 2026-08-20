@@ -314,8 +314,8 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun modeButton(text: String, mode: TradingMode) = Button(this).apply {
-        this.text = text
+    private fun modeButton(buttonText: String, mode: TradingMode) = Button(this).apply {
+        text = buttonText
         textSize = 14f
         isAllCaps = false
         setOnClickListener {
@@ -333,8 +333,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun field(parent: LinearLayout, hint: String, defaultValue: String) = EditText(this).apply {
-        this.hint = hint
+    private fun field(parent: LinearLayout, fieldHint: String, defaultValue: String) = EditText(this).apply {
+        setHint(fieldHint)
         hintTextColors = android.content.res.ColorStateList.valueOf(TEXT_MUTED)
         setTextColor(TEXT_PRIMARY)
         textSize = 16f
@@ -346,8 +346,8 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun label(text: String, size: Float, color: Int) = TextView(this).apply {
-        this.text = text
+    private fun label(labelText: String, size: Float, color: Int) = TextView(this).apply {
+        text = labelText
         textSize = size
         setTextColor(color)
         setLineSpacing(0f, 1.12f)
