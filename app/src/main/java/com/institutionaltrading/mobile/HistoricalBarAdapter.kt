@@ -32,6 +32,7 @@ object HistoricalBarAdapter {
                 close = row.close,
                 isClosed = true,
                 provenance = provenance,
+                volume = row.volume,
             )
         }
         return ValidatedBarSeries(normalizedSymbol, timeframe, bars)
