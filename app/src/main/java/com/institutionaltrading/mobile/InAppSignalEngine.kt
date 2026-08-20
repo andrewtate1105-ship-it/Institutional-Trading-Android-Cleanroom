@@ -24,8 +24,8 @@ object InAppSignalEngine {
     private const val minAccountRiskPercent = 1.0
     private const val minStopPercent = 1.0
     private const val maxStopPercent = 2.0
-    private const val target1R = 1.0
-    private const val target2R = 2.0
+    private const val target1R = 1.5
+    private const val target2R = 3.0
 
     fun analyze(series: ValidatedBarSeries, accountEquity: Double, accountRiskPercent: Double): InAppSignalResult {
         require(series.bars.isNotEmpty()) { "Validated bar series is empty" }
@@ -34,10 +34,24 @@ object InAppSignalEngine {
             "Account risk must be between 1% and 2%"
         }
 
+        val assessment = InstitutionalSignalAnalysis.assess(series)
+        if (assessment.bias == InstitutionalBias.NEUTRAL) {
+            return noTrade(series, series.bars.last().sourceTimestamp, assessment.reason)
+        }
+
         val candidate = TrendFollowingCandidate.evaluate(series)
         val latest = series.bars.last()
         if (candidate.direction == CandidateDirection.NONE || candidate.entryPrice == null || candidate.structuralStop == null) {
             return noTrade(series, latest.sourceTimestamp, candidate.reason)
+        }
+
+        val aligned = when (candidate.direction) {
+            CandidateDirection.LONG -> assessment.bias == InstitutionalBias.BULLISH
+            CandidateDirection.SHORT -> assessment.bias == InstitutionalBias.BEARISH
+            CandidateDirection.NONE -> false
+        }
+        if (!aligned) {
+            return noTrade(series, latest.sourceTimestamp, "Market structure and institutional confluence disagree")
         }
 
         val entry = candidate.entryPrice
@@ -53,7 +67,7 @@ object InAppSignalEngine {
         }
 
         val distance = abs(entry - stop)
-        val target1 = if (candidate.direction == CandidateDirection.LONG) entry + distance else entry - distance
+        val target1 = if (candidate.direction == CandidateDirection.LONG) entry + target1R * distance else entry - target1R * distance
         val target2 = if (candidate.direction == CandidateDirection.LONG) entry + target2R * distance else entry - target2R * distance
         if (!target1.isFinite() || !target2.isFinite() || target1 <= 0.0 || target2 <= 0.0) {
             return noTrade(series, latest.sourceTimestamp, "Calculated exit is invalid", priceRiskPercent)
@@ -72,7 +86,7 @@ object InAppSignalEngine {
             riskPercentOfPrice = priceRiskPercent,
             quantity = sizing.quantity,
             estimatedAccountRisk = sizing.estimatedPositionRisk,
-            reason = candidate.reason,
+            reason = "${candidate.reason}; score ${assessment.score}/8; ${assessment.reason}",
             provenance = latest.provenance,
         )
     }
@@ -99,8 +113,10 @@ object InAppSignalEngine {
         if (result.direction != SignalDirection.NO_TRADE) {
             append("ENTRY: ₹").append(format(result.entry!!)).append('\n')
             append("STOP LOSS: ₹").append(format(result.stopLoss!!)).append('\n')
-            append("EXIT 1: ₹").append(format(result.target1!!)).append('\n')
-            append("EXIT 2: ₹").append(format(result.target2!!)).append('\n')
+            append("EXIT 1 (1.5R): ₹").append(format(result.target1!!)).append('\n')
+            append("EXIT 2 (3R): ₹").append(format(result.target2!!)).append('\n')
+            append("R:R: 1:").append(format(result.rewardToRisk!!)).append('\n')
+            append("SETUP: ").append(result.reason)
         } else {
             append("NO TRADE\n")
             append("Reason: ").append(result.reason)
