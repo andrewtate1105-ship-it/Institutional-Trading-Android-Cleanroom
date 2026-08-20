@@ -335,7 +335,7 @@ class MainActivity : Activity() {
 
     private fun field(parent: LinearLayout, fieldHint: String, defaultValue: String) = EditText(this).apply {
         setHint(fieldHint)
-        hintTextColors = android.content.res.ColorStateList.valueOf(TEXT_MUTED)
+        setHintTextColor(android.content.res.ColorStateList.valueOf(TEXT_MUTED))
         setTextColor(TEXT_PRIMARY)
         textSize = 16f
         setText(defaultValue)
