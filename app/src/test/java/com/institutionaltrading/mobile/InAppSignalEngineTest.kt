@@ -24,11 +24,12 @@ class InAppSignalEngineTest {
             accountEquity = 10000.0,
             accountRiskPercent = 1.0,
         )
+        assertEquals(SetupState.NO_TRADE, result.setupState)
         assertEquals(SignalDirection.NO_TRADE, result.direction)
         assertEquals(0L, result.quantity)
         assertTrue(result.entry == null)
         assertTrue(result.reason.contains("Insufficient closed-bar history"))
-        assertTrue(InAppSignalEngine.format(result).startsWith("SIGNAL: NO_TRADE"))
+        assertTrue(InAppSignalEngine.format(result).startsWith("SETUP: NO_TRADE"))
     }
 
     @Test fun exactlyTwoHundredClosedBarsPassHistoryGate() {
